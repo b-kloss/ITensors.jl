@@ -145,8 +145,10 @@ function Base.size(P::AbstractProjMPO)::Tuple{Int,Int}
   return (d, d)
 end
 
-function _makeL!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
+function _makeL!(P::AbstractProjMPO, psi::MPS,phi::MPS,k::Int)::Union{ITensor,Nothing}
   # Save the last `L` that is made to help with caching
+  # for DiskProjMPO
+    # Save the last `L` that is made to help with caching
   # for DiskProjMPO
   ll = P.lpos
   if ll ≥ k
@@ -160,7 +162,7 @@ function _makeL!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
   ll = max(ll, 0)
   L = lproj(P)
   while ll < k
-    L = L * psi[ll + 1] * P.H[ll + 1] * dag(prime(psi[ll + 1]))
+    L = L * psi[ll + 1] * P.H[ll + 1] * dag(prime(phi[ll + 1]))
     P.LR[ll + 1] = L
     ll += 1
   end
@@ -169,12 +171,22 @@ function _makeL!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
   return L
 end
 
-function makeL!(P::AbstractProjMPO, psi::MPS, k::Int)
-  _makeL!(P, psi, k)
+
+_makeL!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing} = _makeL!(P,psi,psi,k)
+
+
+function makeL!(P::AbstractProjMPO, psi::MPS,phi::MPS,k::Int)
+  _makeL!(P,psi,phi,k)
   return P
 end
 
-function _makeR!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
+function makeL!(P::AbstractProjMPO, psi::MPS,k::Int)
+  _makeL!(P,psi,k)
+  return P
+end
+
+
+function _makeR!(P::AbstractProjMPO, psi::MPS,phi::MPS, k::Int)::Union{ITensor,Nothing}
   # Save the last `R` that is made to help with caching
   # for DiskProjMPO
   rl = P.rpos
@@ -190,7 +202,7 @@ function _makeR!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
   rl = min(rl, N + 1)
   R = rproj(P)
   while rl > k
-    R = R * psi[rl - 1] * P.H[rl - 1] * dag(prime(psi[rl - 1]))
+    R = R * psi[rl - 1] * P.H[rl - 1] * dag(prime(phi[rl - 1]))
     P.LR[rl - 1] = R
     rl -= 1
   end
@@ -198,8 +210,18 @@ function _makeR!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing}
   return R
 end
 
+_makeR!(P::AbstractProjMPO, psi::MPS, k::Int)::Union{ITensor,Nothing} = _makeR!(P,psi,psi,k)
+
+
+
 function makeR!(P::AbstractProjMPO, psi::MPS, k::Int)
   _makeR!(P, psi, k)
+  return P
+end
+
+
+function makeR!(P::AbstractProjMPO, psi::MPS,phi::MPS, k::Int)
+  _makeR!(P, psi,phi, k)
   return P
 end
 
@@ -218,6 +240,12 @@ operation to succeed.
 function position!(P::AbstractProjMPO, psi::MPS, pos::Int)
   makeL!(P, psi, pos - 1)
   makeR!(P, psi, pos + nsite(P))
+  return P
+end
+
+function position!(P::AbstractProjMPO,psi::MPS,phi::MPS,pos::Int)
+  makeL!(P,psi,phi,pos - 1)
+  makeR!(P,psi,phi,pos+nsite(P))
   return P
 end
 
