@@ -194,6 +194,7 @@ include("physics/site_types/qubit.jl")
 include("physics/site_types/spinhalf.jl")
 include("physics/site_types/spinone.jl")
 include("physics/site_types/fermion.jl")
+include("physics/site_types/fermion_IM.jl")
 include("physics/site_types/electron.jl")
 include("physics/site_types/tj.jl")
 include("physics/site_types/qudit.jl") # EXPERIMENTAL
