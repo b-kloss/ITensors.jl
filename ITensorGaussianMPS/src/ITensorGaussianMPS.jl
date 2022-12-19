@@ -9,11 +9,14 @@ import LinearAlgebra: Givens
 
 export slater_determinant_to_mps,
   slater_determinant_to_gmps,
+  correlation_matrix_to_gmps,
+  correlation_matrix_to_mps,
+  pairing_hamiltonian,
   hopping_hamiltonian,
   slater_determinant_matrix,
   slater_determinant_to_gmera
 
-include("gmps.jl")
+include("gmps_bcs_cleaned.jl")
 include("gmera.jl")
 
 end
