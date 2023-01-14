@@ -939,6 +939,10 @@ function _threaded_contract_blockoffsets(
   end
 
   contraction_plan = reduce(vcat, contraction_plans)
+  # Sort contraction plan.
+  # This ensures same ordering of blocks for compatible tensors,
+  # even across independent distributed processes
+  sort!(contraction_plan, by=last)
   blockoffsetsR = BlockOffsets{NR}()
   nnzR = 0
   for (_, _, blockR) in contraction_plan
@@ -1009,10 +1013,10 @@ function _threaded_contract!(
   labelsT2,
   contraction_plan,
 ) where {ElR,ElT1,ElT2,N1,N2,NR}
-  # Sort the contraction plan by the output blocks
-  # This is to help determine which output blocks are the result
+  # Require that input contraction_plan is already sorted
+  # The contraction_plan needs to be sorted to help determine which output blocks are the result
   # of multiple contractions
-  sort!(contraction_plan; by=last)
+  @assert sortperm(contraction_plan,by=last)==sortperm(Vector(1:length(contraction_plan)))
 
   # Ranges of contractions to the same block
   repeats = Vector{UnitRange{Int}}(undef, nnzblocks(R))
