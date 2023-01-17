@@ -7,15 +7,15 @@ using ITensorGaussianMPS
 using HDF5
 using PyPlot
 matplotlib.use("QtAgg")
-using F_utilities
+#using F_utilities
 using Interpolations
 #using GR
-const Fu=F_utilities
+#const Fu=F_utilities
 ITensors.disable_contraction_sequence_optimization()
 #@show ITensors.mkl_get_num_threads()
 
 #@show ITensors.mkl_get_num_threads()
-
+ITensors.enable_combine_contract()
 include("imp_noshift.jl")
 include("bath.jl")
 include("aux.jl")
@@ -88,9 +88,9 @@ show()
 #yscale("log")
 #show()
 
-SvN_ni=get_noninteracting_bipartite_entropy(c)
+#SvN_ni=get_noninteracting_bipartite_entropy(c)
 SvN_mps, SvN_spectrum=get_interacting_bipartite_entropy(psi_r)
-@show SvN_ni
+#@show SvN_ni
 #return
 fout=h5open("mew_results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","w")
 fout["svals"] = SvN_spectrum
@@ -149,19 +149,37 @@ counter=0
 BLAS.set_num_threads(1)
 #@show exp(logdot(dag(prime(psi_l_fused)),centers[length(centers)]*psi_r_fused)-Z)
 results=zeros(ComplexF64,(length(taus),length(projs)))
-Threads.@threads for i = 1:length(taus)
+sitefactor=real(-Z)/float(length(centerss[1][1]))
+for i in 1:length(taus)
     for j in 1:length(projs)
-        results[i,j] = weights[j]*exp(logdot(dag(psi_l_fused),centerss[j][i]*prime(psi_r_fused))-Z)
+        for site in 1:length(centerss[j][i])
+            centerss[j][i][site]*=exp(sitefactor)
+        end
     end
 end
-@show results
+nZ=0.0
+for (i,Z_MPO) in enumerate(Z_MPOs)
+    for site in 1:length(Z_MPO)
+        Z_MPO[site]*=exp(sitefactor)
+    end
+    contr=dot(dag(psi_l_fused),Z_MPO*prime(psi_r_fused))
+    nZ=nZ+weights[i]*contr
+end
+@show exp(Z), nZ
+Threads.@threads for i = 1:length(taus)
+    for j in 1:length(projs)
+        
+        results[i,j] = weights[j]*inner(dag(psi_l_fused),centerss[j][i]*prime(psi_r_fused))
+    end
+end
+#@show results
 results[isnan.(results)] .= 0.0
 results=dropdims(sum(results,dims=2),dims=2)
 @show results
-fout=h5open("results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","r+")
-fout["G"] = results
-fout["t"] = taus[2:end,1:1]
-close(fout)
+#fout=h5open("results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","r+")
+#fout["G"] = results
+#fout["t"] = taus[2:end,1:1]
+#close(fout)
 #plot(real.(results[1:10]),"b")
 #show()
 return

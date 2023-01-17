@@ -7,10 +7,10 @@ using ITensorGaussianMPS
 using HDF5
 using PyPlot
 matplotlib.use("QtAgg")
-using F_utilities
+#using F_utilities
 using Interpolations
 #using GR
-const Fu=F_utilities
+#const Fu=F_utilities
 ITensors.disable_contraction_sequence_optimization()
 #@show ITensors.mkl_get_num_threads()
 
@@ -92,9 +92,9 @@ show()
 #yscale("log")
 #show()
 
-SvN_ni=get_noninteracting_bipartite_entropy(c)
+#SvN_ni=get_noninteracting_bipartite_entropy(c)
 SvN_mps, SvN_spectrum=get_interacting_bipartite_entropy(psi_r)
-@show SvN_ni
+#@show SvN_ni
 #return
 fout=h5open("results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","w")
 fout["svals"] = SvN_spectrum
@@ -129,8 +129,13 @@ counter=0
 BLAS.set_num_threads(1)
 #@show exp(logdot(dag(prime(psi_l_fused)),centers[length(centers)]*psi_r_fused)-Z)
 results=zeros(ComplexF64,length(taus))
+sitefactor=real(-Z)/float(length(centers[i]))
 Threads.@threads for i = 1:length(taus)
-    results[i] = exp(logdot(dag(psi_l_fused),centers[i]*prime(psi_r_fused))-Z)
+    for site in 1:length(centers[i])
+        centers[i][site]*=exp(sitefactor)
+    end
+    #M=normalize(centers[i]; (lognorm!)=[-real(Z)])
+    results[i] = exp(logdot(dag(psi_l_fused),centers[i]*prime(psi_r_fused)))
 end
 @show results
 fout=h5open("results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","r+")

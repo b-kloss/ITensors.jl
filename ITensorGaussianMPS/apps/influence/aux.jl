@@ -20,3 +20,12 @@ function get_interacting_bipartite_entropy(psi0::MPS;b=0)
     end
     return SvN,svals
 end
+
+function g_lesser(omega::Number,beta::Number, tau::Number,tau_p::Number)
+    return real(exp(-omega * (tau - tau_p)) * 1.0 / (1.0+ exp(beta * omega)))
+end
+
+function g_greater(omega::Number,beta::Number, tau::Number,tau_p::Number)
+    return -real(exp(-omega * (tau - tau_p)) * 1.0 / (1.0+ exp(-beta * omega))) 
+end
+

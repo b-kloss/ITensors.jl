@@ -68,6 +68,18 @@ function get_Tcr(U,dt,ed::Pair,rs::Index,ls::Index)
     return itensor(T, ls', dag(rs),)
 end
 
+function get_Tcr_b(U,dt,ed::Pair,rs::Index,ls::Index)
+    ed_up,ed_dn=ed
+    T=[
+        0 0 1 0
+        0 0 0 0
+        0 0 0 0 
+        0 0 -exp(-dt*(ed_dn)) 0
+    ]
+    return itensor(T, ls', dag(rs),)
+end
+
+
 function get_Tcl(U,dt,ed::Pair,rs1::Index,rs2::Index,ls1::Index,ls2::Index)
     ed_up,ed_dn=ed
     T=[
@@ -190,22 +202,22 @@ function get_state_projections(site_r,site_l)
 end
 
 
-function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function,state_projection::ITensor)
+function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function,state_projection::ITensor;states_kwargs...)
     #assumes merged pairs of sites
     #evaluates G(t[tind],0)=<cdag(0)c(t[tind])> when contracted with IM-MPSs
     M=length(combined_sites_l)
     #i=1 ##irrelevant here
-    thefun=states(M-1)
+    thefun=states(M-1;states_kwargs...)
     preMPO=ITensor[]
     push!(preMPO,state_projection)
     for n in 2:M-1
         push!(preMPO, thefun(n-1)(U,dt,ed,combined_sites_l[n],combined_sites_r[n]))
     end
-    push!(preMPO, thefun(M-1)(U,dt,ed,combined_sites_l[M],combined_sites_l[1],combined_sites_r[M],combined_sites_r[1])*state_projection)
+    push!(preMPO, thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M])*state_projection)
     
     return MPO(preMPO)
-    
 end
+
 
 
 function get_1PGreens_MPO(tind::Int,Nt::Int; spin0="up",spin1="up")
@@ -235,7 +247,8 @@ function get_1PGreens_MPO(tind::Int,Nt::Int; spin0="up",spin1="up")
 
 end
 
-function get_Z_MPO_fun(Nt::Int)
+function get_Z_MPO_fun(Nt::Int;states_kwargs...)
+    #dummy kwargs not used here
     T=get_T
     T0=get_TB
     #Tedge=state
@@ -246,6 +259,64 @@ function get_Z_MPO_fun(Nt::Int)
 
 end
 
+function get_env_MPO_fun(Nt::Int;spin="up")
+    T=get_T
+    if spin=="up"
+        T0=get_TBcr
+    elseif spin=="down"
+        T0=get_TBcl
+    end
+    return (n -> (n==Nt ? T0 : T))::Function
+end
+
+function get_env_boundary_MPO_fun(Nt::Int;spin="up")
+    T=get_T
+    if spin=="up"
+        T0=get_TBnr
+    elseif spin=="down"
+        @assert false   #not implemented
+    end
+    return (n -> (n==Nt ? T0 : T))::Function
+end
+
+
+function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS,psir::MPS;spin="up")
+    ###take care of G(0) separately?
+    #0, length(H) + 1, 2, H, Vector{ITensor}(undef, length(H))
+    P=ITensors.ProjMPO(0, length(envMPO) + 1, 1, envMPO, Vector{ITensor}(undef, length(envMPO)))
+    #@show "getcorr"
+    #set position to beginning of chain
+    P=position!(P,psil,psir,1)
+    res=ComplexF64[]
+    #@show "before loop"
+    for pos in 2:length(envMPO)
+        #@show pos
+        P=position!(P,psil,psir,pos)
+        L=lproj(P)
+        R=rproj(P)
+        combined_site_l=siteind(psil,pos)
+        combined_site_r=siteind(psir,pos)
+        if spin=="up"
+            if pos==length(envMPO)
+                localterm=boundaryMPO[length(envMPO)]
+            else
+                localterm=get_Tcr(U,dt,ed,combined_site_l,combined_site_r)
+            end
+        else
+            if pos==length(envMPO)
+                localterm=boundaryMPO[length(envMPO)]
+            else
+                localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r)
+            end
+        end
+        val=(L*psil[pos])*localterm*(prime(dag(psir[pos]))*R)
+        #@show scalar(val)
+        push!(res,Complex(scalar(val)))
+    end
+    
+    ###FIXME:take care of boundary G(0) later, once the rest works  
+    return res
+end
 
 
 function fuse_indices_pairwise(Ψ::MPS)

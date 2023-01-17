@@ -1,9 +1,9 @@
-using F_utilities
+#using F_utilities
 using LinearAlgebra
 using PyPlot
+using QuadGK
 
-
-function get_IM(G::Matrix;kwargs...)
+function get_IM(G::Matrix,reshuffle::Bool=true;kwargs...)
     eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
     maxblocksize=get(kwargs, :maxblocksize, 8)
     minblocksize=get(kwargs, :maxblocksize, 1)
@@ -11,7 +11,14 @@ function get_IM(G::Matrix;kwargs...)
     maxdim=get(kwargs,:maxdim,2^maxblocksize)
     c=exp_bcs_julian(G)
     N=size(c,1)
-    sites_r = siteinds("Fermion", div(N,2); conserve_qns=false)
+    if reshuffle==true
+    #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
+        #shuffledinds=vcat(Vector(3:N),[1,2])
+        shuffledinds=sortperm(vcat(Vector(3:N),[1,2]))
+        
+        c=c[shuffledinds,:][:,shuffledinds]
+    end
+    sites_r = siteinds("Fermion", div(N,2);conserve_qns=false)
     psi=ITensorGaussianMPS.correlation_matrix_to_mps(
         sites_r,copy(c);
         eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
@@ -56,13 +63,15 @@ function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=
         minblocksize=get(kwargs, :maxblocksize, 1)
         cutoff=get(kwargs,:cutoff,0.0)
         maxdim=get(kwargs,:maxdim,2^maxblocksize)
-        psi=ITensorGaussianMPS.correlation_matrix_to_mps(
-            sites_r,copy(c);
+        
+        @time psi=ITensorGaussianMPS.correlation_matrix_to_mps(
+            sites_r,copy(real.(c));
             eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
         )    
         return psi, c
     end
 end
+
 
 function get_Delta_t_flatDOS(beta,V,D,N_w,N_taus)
     dt=beta/(N_taus-1)
@@ -91,6 +100,13 @@ function get_Delta_t_flatDOS(beta,V,D,N_w,N_taus)
     return res, resp,resn#,respp
 end
 
+
+#function get_integrated_gf(g::Function,beta::Number,tau::Number,tau_p::Number,spec_dens::Function,lower::Number,upper::Number)
+#    g_wrap(omega) = 1.0/(2.0*pi)*g(omega,beta,tau,tau_p)*spec_dens(omega)
+#    return quadgk(g_wrap, lower,upper;)
+#end
+        
+
 function get_Delta_t_genDOS_mat(beta::Float64,Gamma::Function,omegas::Vector,N_taus::Int;boundary::Float64=1.0)
     "returns Delta_t,t' for a generic Gamma(omega). Assumes equidistant grid of omegas."
     N_w=length(omegas)
@@ -115,6 +131,32 @@ function get_Delta_t_genDOS_mat(beta::Float64,Gamma::Function,omegas::Vector,N_t
     end
     return Delta
 end
+
+
+function get_Delta_t_functional_mat(N_taus,beta,lower,upper,g_lesser::Function,g_greater::Function)
+    dt=beta/(N_taus+1)
+    @show dt
+    V=1
+    
+    Delta=zeros(ComplexF64,(N_taus,N_taus))
+    for i in 1:N_taus
+        for j in 1:N_taus
+            g_l(omega) = 0.5*g_lesser(omega,dt*i,dt*j)
+            g_g(omega) = 0.5*g_greater(omega,dt*i,dt*j)
+            
+            if i<j
+                Delta[i,j]=quadgk(g_l, lower,upper)[1]
+            elseif i==j
+                Delta[i,j]=quadgk(g_g, lower,upper)[1]
+            else
+                Delta[i,j]=quadgk(g_g, lower,upper)[1]
+            end
+        end
+    end
+    return Delta
+
+end
+
 
 
 function get_Delta_t_flatDOS_mat(beta,V,D,N_w,N_taus;boundary=1.0)
@@ -202,7 +244,70 @@ function get_G(Delta1::Vector,Delta2::Vector,dt)
     #newG=G[vcat(Vector(2:2*n),[1]),:][:,vcat(Vector(2:2*n),[1])]
     return G    
 end
-function get_G(Delta::Matrix,dt)
+
+function evaluate_flatDOS_lesser(lower,upper,beta,tau,tau_p)
+    t=tau-tau_p
+    up=1/t *exp(upper*t) * _₂F₁(1,-t/beta,1-t/beta,-exp(-beta*upper))
+    lo=1/t *exp(lower*t) * _₂F₁(1,-t/beta,1-t/beta,-exp(-beta*lower))
+    return up-lo
+end
+
+function evaluate_flatDOS_greater(lower,upper,beta,tau,tau_p)
+    t=tau-tau_p
+    up=1/t *exp(upper*t) * _₂F₁(1,-t/beta,1-t/beta,-exp(-beta*upper))
+    lo=1/t *exp(lower*t) * _₂F₁(1,-t/beta,1-t/beta,-exp(-beta*lower))
+    return up-lo
+end
+    
+
+function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lower::Number,upper::Number;alpha=1,convention="a")
+    """exactly the way Julian does it up to units/factors"""
+    G=zeros(ComplexF64,(2*Nt,2*Nt))
+    #convention="b"
+    factor=0.5/upper
+    for m in 0:Nt-1   ##0 2*Nt-1 for python convention match
+        tau=m*dt
+        for n in m+1:Nt-1
+            tau_p=n*dt
+            #g_l(omega) = 0.5*g_lesser(omega,dt*i,dt*j)
+            #g_g(omega) = 0.5*g_greater(omega,dt*i,dt*j)
+            
+            G[2*m+1,2*n+1+1]+= dt^2 * quadgk(omega -> factor*g_greater(omega,tau_p,tau+(dt*alpha)),lower,upper)[1]
+            G[2*m+1+1,2*n+1]+= -1.0 * dt^2 * quadgk(omega -> factor*g_lesser(omega,tau,tau_p+(dt*alpha)),lower,upper)[1]
+        end
+        G[2*m+1,2*m+1+1] += dt^2 * quadgk(omega -> factor*g_lesser(omega,tau,tau+(dt*alpha)),lower,upper)[1]
+        G[2*m+1,2*m+1+1] += - 1.
+    end
+    #matshow(real.(G))
+    #show()
+    G -=transpose(G)
+    if convention=="b"
+        for m in 0:Nt-1
+            G[2*m+1,2*m+1+1] -= - 1.0
+            G[2*m+1+1,2*m+1] -= 1.0
+        end
+        for m in 0:Nt*2-1
+            G[m+1,((m+1)%2)+1:2:2*Nt] *= -1.0
+        end
+        G[end,:] *=-1
+        G[:,end] *=-1
+        id_meas= zeros(eltype(G),size(G))
+        for m in 0:Nt-2
+            id_meas[2*m+1+1,2*(m+1)+1] += 1.0
+        end
+        id_meas[1,end] -= 1.0
+        id_meas -= transpose(id_meas)
+        G +=id_meas
+        G = inv(G)
+        #shuffledinds=vcat(Vector(3:N),[1,2])
+        #c=c[shuffledinds,:][:,shuffledinds]
+    end
+
+            
+    return G
+end
+
+function get_G(Delta::Matrix,dt;alpha::Int=1)
     n=size(Delta,1)
     G=zeros(ComplexF64,2*n,2*n)
     #Delta[n,1]=-Delta[n,1]
@@ -347,6 +452,7 @@ function get_correlation_matrix_Julian(Delta1,Delta2,dt)
     #show()
     return corr_rotated
 end
+
 
 function get_correlation_matrix_Julian(Delta,dt)
     G=get_G(Delta,dt)
