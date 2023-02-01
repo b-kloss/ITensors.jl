@@ -133,12 +133,12 @@ counter=0
 BLAS.set_num_threads(1)
 #@show exp(logdot(dag(prime(psi_l_fused)),centers[length(centers)]*psi_r_fused)-Z)
 results=zeros(ComplexF64,length(taus))
-sitefactor=real(-Z)/float(length(centers[i]))
+sitefactor=real(-Z)/float(length(centers[1]))
 Threads.@threads for i = 1:length(taus)
     for site in 1:length(centers[i])
         centers[i][site]*=exp(sitefactor)
     end
-    results[i] = exp(logdot(dag(psi_l_fused),centers[i]*prime(psi_r_fused))-Z)
+    results[i] = exp(logdot(dag(psi_l_fused),centers[i]*prime(psi_r_fused))
 end
 @show results
 fout=h5open("comp_results_beta"*string(beta)*"_Nt"*string(Nt)*"_chi"*string(maxdim)*".h5","r+")

@@ -4,13 +4,13 @@ module params
 #export beta, Nt, U,ed_u,ed_d
 
 const    outf="data.h5"
-const    eigval_cutoff=1e-11
+const    eigval_cutoff=1e-14
 const    minblocksize=8
 const    maxblocksize =8  #2 or 4(4 doesn't seem to work as well as it should)
-const    maxdim = 128 
+const    maxdim = 256
 const    cutoff = 0.0
-const    beta =2.0 
-const    Nt = 40
+const    beta =0.1 
+const    Nt = 20
 const    U = 0.0
 const    ed_u = 0.0
 const    ed_d = 0.0

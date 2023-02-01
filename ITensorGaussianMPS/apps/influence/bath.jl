@@ -3,7 +3,56 @@ using LinearAlgebra
 using PyPlot
 using QuadGK
 
-function get_IM(G::Matrix,reshuffle::Bool=true;kwargs...)
+function apply_ph_everyother(c::AbstractMatrix)
+    cb=ITensorGaussianMPS.reverse_interleave(c)
+    N=size(cb,1)
+    function map_theinds(x::Int,N::Int)
+        n=div(N,2)
+        if iseven(mod(x,n))
+            return x,1
+        else
+            newx=x>n ? x-n : x+n
+            return newx,iseven(div(newx,2)) ? 1 : -1
+            #return  x>n ? x-n : x+n ,isodd(div()) ? 1 : -1
+            #return  x>n ? x-n : x+n ,iszero(mod(div(mod(x,n),2),2)) ? 1 : -1
+        end
+    end
+    trafo=zeros(Int8,N,N)
+    for i in 1:N
+        col,val=map_theinds(i,N)
+        trafo[i,col]=val
+    end
+    #matshow(trafo)
+    ct=transpose(trafo)*c*trafo
+    #matshow(real.(ct))
+    #show()
+    n=div(N,2)
+    newc=zeros(eltype(c),n,n)
+    for i in 1:div(n,2)
+        for j in 1:div(n,2)
+            newc[2i-1,2j-1]=cb[n+2i-1,n+2j-1]
+            #newc[2i,2j]=(iszero(mod(mod(i,2)+mod(j,2),2)) ? 1 : -1) *cb[2i,2j]
+            newc[2i,2j]=(iseven(i+j) ? 1 : -1) *cb[2i,2j]
+            
+            #newc[2i,2j]=(isodd(div(i,2)+div(i,2)) ? -1 : 1) *cb[2i,2j]
+            #newc[2i-1,2j]=(iszero(mod(j,2)) ? 1 : -1)*cb[n+2i-1,2j]
+            newc[2i-1,2j]=(iseven(j) ? 1 : -1)*cb[n+2i-1,2j]
+            
+            #newc[2i-1,2j]=(isodd(div(j,2)) ? -1 : 1)*cb[n+2i-1,2j]
+            #newc[2i,2j-1]=(iszero(mod(i,2)) ? 1 : -1)*cb[2i,n+2j-1]
+            newc[2i,2j-1]=(iseven(i) ? 1 : -1)*cb[2i,n+2j-1]
+            
+            #newc[2i,2j-1]=(isodd(div(i,2)) ? -1 : 1)*cb[2i,n+2j-1]
+        end
+    end
+    #matshow(real.(newc))
+    #show()
+    #@show eigvals(Hermitian(newc))
+    return newc
+end
+
+
+function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
     eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
     maxblocksize=get(kwargs, :maxblocksize, 8)
     minblocksize=get(kwargs, :maxblocksize, 1)
@@ -11,20 +60,31 @@ function get_IM(G::Matrix,reshuffle::Bool=true;kwargs...)
     maxdim=get(kwargs,:maxdim,2^maxblocksize)
     c=exp_bcs_julian(G)
     N=size(c,1)
+    
     if reshuffle==true
-    #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
+        #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
         #shuffledinds=vcat(Vector(3:N),[1,2])
         shuffledinds=sortperm(vcat(Vector(3:N),[1,2]))
         
         c=c[shuffledinds,:][:,shuffledinds]
     end
-    sites_r = siteinds("Fermion", div(N,2);conserve_qns=false)
+
+    if !ph
+        sites_r = siteinds("Fermion", div(N,2);conserve_nfparity=false,conserve_nf=false)
+    else
+        sites_r = siteinds("Fermion", div(N,2);conserve_nfparity=true,conserve_nf=true)
+        c=apply_ph_everyother(c)
+    end
+    
+    @time begin
     psi=ITensorGaussianMPS.correlation_matrix_to_mps(
-        sites_r,copy(c);
+        sites_r,real.(c);
         eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
-    )    
+    )
+    end
     return psi, c
 end
+
 function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=true,reshuffle::Bool=true;kwargs...)
     dt=taus[2]-taus[1]
     @assert all(isapprox.(dt,diff(taus)))
@@ -37,6 +97,8 @@ function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=
         #show()
         
         c=get_correlation_matrix_Julian(Delta,dt)
+        #matshow(real.(c))
+        #show()
         N = size(c,1)
         if reshuffle==true
         #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
@@ -53,7 +115,9 @@ function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=
     if make_mps==false
         return c
     else
-        sites_r = siteinds("Fermion", div(N,2); conserve_qns=false)
+        sites_r = siteinds("Fermion", div(N,2); conserve_nfparity=false,conserve_nf=false,conserve_sz=false)
+        #sites_r = siteinds("Fermion", div(N,2); conserve_nfparity=true,conserve_nf=false,conserve_sz=false)
+        
         #sitesA = siteinds("Fermion", div(N,4); conserve_qns=false,conserve_nf=true)
         #sitesB = siteinds("AntiFermionIM", div(N,4); conserve_qns=false,conserve_nf=true)
         
@@ -65,9 +129,14 @@ function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=
         maxdim=get(kwargs,:maxdim,2^maxblocksize)
         
         @time psi=ITensorGaussianMPS.correlation_matrix_to_mps(
-            sites_r,copy(real.(c));
+            sites_r,real.(c);
             eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
         )    
+        
+        ##@time psi=ITensorGaussianMPS.correlation_matrix_to_mps(
+        ##    sites_r,apply_ph_everyother(real.(c));
+        ##    eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
+        ##)    
         return psi, c
     end
 end

@@ -107,8 +107,8 @@ for i in 1:length(psi_l)
     @show inds(psi_l[i])
 end
 #@return
-combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_r)
-combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_l)
+_,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_r)
+_,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_l)
 @show linkinds(psi_r_fused)
 @show linkinds(psi_l_fused)
 
