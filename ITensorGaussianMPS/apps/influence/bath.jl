@@ -6,26 +6,6 @@ using QuadGK
 function apply_ph_everyother(c::AbstractMatrix)
     cb=ITensorGaussianMPS.reverse_interleave(c)
     N=size(cb,1)
-    function map_theinds(x::Int,N::Int)
-        n=div(N,2)
-        if iseven(mod(x,n))
-            return x,1
-        else
-            newx=x>n ? x-n : x+n
-            return newx,iseven(div(newx,2)) ? 1 : -1
-            #return  x>n ? x-n : x+n ,isodd(div()) ? 1 : -1
-            #return  x>n ? x-n : x+n ,iszero(mod(div(mod(x,n),2),2)) ? 1 : -1
-        end
-    end
-    trafo=zeros(Int8,N,N)
-    for i in 1:N
-        col,val=map_theinds(i,N)
-        trafo[i,col]=val
-    end
-    #matshow(trafo)
-    ct=transpose(trafo)*c*trafo
-    #matshow(real.(ct))
-    #show()
     n=div(N,2)
     newc=zeros(eltype(c),n,n)
     for i in 1:div(n,2)
@@ -45,9 +25,6 @@ function apply_ph_everyother(c::AbstractMatrix)
             #newc[2i,2j-1]=(isodd(div(i,2)) ? -1 : 1)*cb[2i,n+2j-1]
         end
     end
-    #matshow(real.(newc))
-    #show()
-    #@show eigvals(Hermitian(newc))
     return newc
 end
 
@@ -55,10 +32,17 @@ end
 function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
     eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
     maxblocksize=get(kwargs, :maxblocksize, 8)
-    minblocksize=get(kwargs, :maxblocksize, 1)
+    minblocksize=get(kwargs, :minblocksize, 1)
     cutoff=get(kwargs,:cutoff,0.0)
     maxdim=get(kwargs,:maxdim,2^maxblocksize)
-    c=exp_bcs_julian(G)
+    #Gph=apply_ph_everyother(G)
+    #matshow(Gph)
+
+    BLAS.set_num_threads(32)
+    println("Exponentiang G for corr matrix")
+    @time begin
+        c=exp_bcs_julian(G)
+    end
     N=size(c,1)
     
     if reshuffle==true
@@ -75,7 +59,9 @@ function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
         sites_r = siteinds("Fermion", div(N,2);conserve_nfparity=true,conserve_nf=true)
         c=apply_ph_everyother(c)
     end
-    
+
+    BLAS.set_num_threads(1)
+    println("Converting corr to MPS")    
     @time begin
     psi=ITensorGaussianMPS.correlation_matrix_to_mps(
         sites_r,real.(c);
@@ -83,235 +69,6 @@ function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
     )
     end
     return psi, c
-end
-
-function get_IM(taus::Vector,Delta::Matrix,mode::String="Julian",make_mps::Bool=true,reshuffle::Bool=true;kwargs...)
-    dt=taus[2]-taus[1]
-    @assert all(isapprox.(dt,diff(taus)))
-    @show dt
-    if mode=="Julian"
-        N = size(Delta,1)
-        #shuffledinds=vcat(Vector(2:N),[1,])
-        #Delta=Delta[shuffledinds,shuffledinds]
-        #matshow(real.(Delta))
-        #show()
-        
-        c=get_correlation_matrix_Julian(Delta,dt)
-        #matshow(real.(c))
-        #show()
-        N = size(c,1)
-        if reshuffle==true
-        #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
-            shuffledinds=vcat(Vector(3:N),[1,2])
-            c=c[shuffledinds,:][:,shuffledinds]
-        end
-        #matshow(real.(c))
-        #show()
-    else
-        println("BK method")
-        c=get_correlation_matrix(Delta,dt)
-        N= size(c,1)
-    end
-    if make_mps==false
-        return c
-    else
-        sites_r = siteinds("Fermion", div(N,2); conserve_nfparity=false,conserve_nf=false,conserve_sz=false)
-        #sites_r = siteinds("Fermion", div(N,2); conserve_nfparity=true,conserve_nf=false,conserve_sz=false)
-        
-        #sitesA = siteinds("Fermion", div(N,4); conserve_qns=false,conserve_nf=true)
-        #sitesB = siteinds("AntiFermionIM", div(N,4); conserve_qns=false,conserve_nf=true)
-        
-        #sites_r=ITensorGaussianMPS.interleave(sitesA,sitesB)
-        eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
-        maxblocksize=get(kwargs, :maxblocksize, 8)
-        minblocksize=get(kwargs, :maxblocksize, 1)
-        cutoff=get(kwargs,:cutoff,0.0)
-        maxdim=get(kwargs,:maxdim,2^maxblocksize)
-        
-        @time psi=ITensorGaussianMPS.correlation_matrix_to_mps(
-            sites_r,real.(c);
-            eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
-        )    
-        
-        ##@time psi=ITensorGaussianMPS.correlation_matrix_to_mps(
-        ##    sites_r,apply_ph_everyother(real.(c));
-        ##    eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
-        ##)    
-        return psi, c
-    end
-end
-
-
-function get_Delta_t_flatDOS(beta,V,D,N_w,N_taus)
-    dt=beta/(N_taus-1)
-    #dt*=(N_taus-1)/N_taus
-    omegas=Vector(LinRange(-D,D,N_w))#linspace(-D,D,N_w)
-    taus=Vector(LinRange(-beta,beta,2*N_taus-1))
-    res=ComplexF64[]
-    resp=ComplexF64[]
-    resn=ComplexF64[]
-    
-    #respp=ComplexF64[]
-    
-    for tau in taus
-        #p=V^2*(1.0/N_w)*sum(-exp.(-omegas .* (tau-beta))./(1 .+ exp.(omegas*beta)))
-        #pp=V^2*(1.0/N_w)*sum(exp.(-omegas .* (tau-beta)) .*(1.0 .- (1.0 ./(1 .+ exp.(omegas*beta)))))        
-        p=V^2*(2*D/N_w)*sum(-exp.(-omegas(tau)) ./ (1+exp.(-omegas*beta)))
-        n=V^2*(2*D/N_w)*sum(exp.(omegas.*tau)./(1 .+ exp.(omegas*beta)))
-        push!(res,(tau>=0.0) ? p : n)
-        if (tau>=0.0)
-            push!(resn,n)
-            push!(resp,p)
-            #push!(respp,pp)
-            
-        end
-    end
-    return res, resp,resn#,respp
-end
-
-
-#function get_integrated_gf(g::Function,beta::Number,tau::Number,tau_p::Number,spec_dens::Function,lower::Number,upper::Number)
-#    g_wrap(omega) = 1.0/(2.0*pi)*g(omega,beta,tau,tau_p)*spec_dens(omega)
-#    return quadgk(g_wrap, lower,upper;)
-#end
-        
-
-function get_Delta_t_genDOS_mat(beta::Float64,Gamma::Function,omegas::Vector,N_taus::Int;boundary::Float64=1.0)
-    "returns Delta_t,t' for a generic Gamma(omega). Assumes equidistant grid of omegas."
-    N_w=length(omegas)
-    Γ=(1.0/N_w).*(Gamma.(omegas))
-    denom=1 .+ exp.(omegas*beta)
-    mdenom=1 .+exp.(-omegas*beta)
-    diagonal_el=sum(Γ .*(-boundary .+ (1.0 ./ denom)))
-    dt=beta/(N_taus)
-    Delta=zeros(ComplexF64,(N_taus,N_taus))
-    for i in 1:N_taus
-        for j in 1:N_taus
-
-            if i<j
-                Delta[i,j]= sum(Γ .*(exp.(-omegas.*(dt*(i-j)))./denom))
-            elseif i==j
-                #println(V^2*(1.0/N_w)*sum(-1 .+ 1 ./ (1 .+ exp.(omegas*beta))))
-                Delta[i,j]=diagonal_el
-            elseif i>j
-                Delta[i,j]=sum( Γ .* (-exp.(-omegas*(dt*(i-j))) ./ mdenom) )
-            end
-        end
-    end
-    return Delta
-end
-
-
-function get_Delta_t_functional_mat(N_taus,beta,lower,upper,g_lesser::Function,g_greater::Function)
-    dt=beta/(N_taus+1)
-    @show dt
-    V=1
-    
-    Delta=zeros(ComplexF64,(N_taus,N_taus))
-    for i in 1:N_taus
-        for j in 1:N_taus
-            g_l(omega) = 0.5*g_lesser(omega,dt*i,dt*j)
-            g_g(omega) = 0.5*g_greater(omega,dt*i,dt*j)
-            
-            if i<j
-                Delta[i,j]=quadgk(g_l, lower,upper)[1]
-            elseif i==j
-                Delta[i,j]=quadgk(g_g, lower,upper)[1]
-            else
-                Delta[i,j]=quadgk(g_g, lower,upper)[1]
-            end
-        end
-    end
-    return Delta
-
-end
-
-
-
-function get_Delta_t_flatDOS_mat(beta,V,D,N_w,N_taus;boundary=1.0)
-    #println("in")
-    #@show beta,V,D,N_w,N_taus
-    dt=beta/(N_taus)
-    @show dt
-    #@show Vector(LinRange(-D,D,N_w))
-    omegas=Vector(LinRange(-D,D,N_w+1))[1:end-1]#linspace(-D,D,N_w)
-    Delta=zeros(ComplexF64,(N_taus,N_taus))
-
-    #respp=ComplexF64[]
-    for i in 1:N_taus
-        for j in 1:N_taus
-
-            if i<j
-                Delta[i,j]=V^2*(D/N_w)*sum(exp.(-omegas.*(dt*(i-j)))./(1 .+ exp.(omegas*beta)))
-            elseif i==j
-                #println(V^2*(1.0/N_w)*sum(-1 .+ 1 ./ (1 .+ exp.(omegas*beta))))
-                Delta[i,j]=V^2*(D/N_w)*sum(-1.0 .+ (1.0 ./ (1 .+ exp.(omegas*beta))))
-            elseif i>j
-                Delta[i,j]=V^2*(D/N_w)*sum(-exp.(-omegas*(dt*(i-j))) ./ (1 .+exp.(-omegas*beta)))
-                #Delta[i,j]=V^2*(1.0/N_w)*sum(-1 .+ exp.(-omegas*(dt*(i-j))) ./ (1 .+exp.(omegas*beta)))
-                #Delta[i,j]=V^2*(1.0/N_w)*sum(-exp.(-omegas*(dt*(i-j))) .* (1.0 .- (1.0 ./ (1 .+ exp.(omegas*beta)))))
-            
-            end
-        end
-    end
-    #matshow(real.(Delta))
-    #show()
-    #println(out)
-    return Delta
-end
-
-function get_Delta_t_flatDOS_mat2(beta,V,D,N_w,N_taus)
-    #println("in")
-    #@show beta,V,D,N_w,N_taus
-    dt=beta/(N_taus-1)
-    #@show Vector(LinRange(-D,D,N_w))
-    omegas=Vector(LinRange(-D,D,N_w))#linspace(-D,D,N_w)
-    #taus=Vector(LinRange(-beta,beta,2*N_taus-1))
-    #res=ComplexF64[]
-    #resp=ComplexF64[]
-    resn=ComplexF64[]
-    Delta_lesser=zeros(ComplexF64,(N_taus,N_taus))
-    Delta_greater=zeros(ComplexF64,(N_taus,N_taus))
-
-    #respp=ComplexF64[]
-    for i in 1:N_taus
-        for j in 1:N_taus
-            Delta_lesser[i,j]=V^2*(1.0/N_w)*sum(exp.(-omegas.*(dt*(i-j)))./(1 .+ exp.(omegas*beta)))
-            Delta_greater[i,j]=V^2*(1.0/N_w)*sum(-exp.(-omegas*(dt*(i-j))) ./ (1 .+exp.(-omegas*beta)))
-            
-        end
-    end
-    #println(out)
-    return Delta_lesser,Delta_greater
-end
-
-
-function get_G(Delta1::Vector,Delta2::Vector,dt)
-    n=size(Delta1,1)
-    G=zeros(ComplexF64,2*n,2*n)
-    for i in 1:n
-        for j in 1:i
-            if i>j
-                G[2*i,2*j-1]= Delta[abs(i-j)+1]*(-(dt^2))
-                G[2*i-1,2*j]= Delta1[abs(i-j)+1]*(-(dt^2))
-             elseif i<j
-                #pass
-                G[2*i,2*j-1]= Delta2[n-abs(i-j)]*(dt^2)
-                G[2*i-1,2*j]= -Delta1[n-abs(i-j)]*(dt^2)
-            elseif i==j
-                G[2*i,2*i-1]= 1 - (0.5*Delta2[1]*(dt^2))
-                G[2*i-1,2*i]= (0.5*Delta2[1]*(dt^2)) - 1       
-            end
-        end
-    end
-    G=0.5*(G-transpose(G))
-    matshow(real.(G))
-    matshow(imag.(G))
-    show()
-    
-    G=G[vcat(Vector(2:2*n),[1]),vcat(Vector(2:2*n),[1])]
-    #newG=G[vcat(Vector(2:2*n),[1]),:][:,vcat(Vector(2:2*n),[1])]
-    return G    
 end
 
 function evaluate_flatDOS_lesser(lower,upper,beta,tau,tau_p)
@@ -332,23 +89,31 @@ end
 function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lower::Number,upper::Number;alpha=1,convention="a")
     """exactly the way Julian does it up to units/factors"""
     G=zeros(ComplexF64,(2*Nt,2*Nt))
+    #G_opt=zeros(ComplexF64,(2*Nt,2*Nt))
+    
     #convention="b"
     factor=0.5/upper
+    @assert (alpha==0.0 || alpha==1.0)
+    incr=Int(alpha)
+    valsg=Dict()
+    valsl=Dict()
+    
+    for i in 0:Nt
+        valsg[i]=quadgk(omega -> factor*g_greater(omega,i*dt),lower,upper)[1]
+        valsl[-i]=quadgk(omega -> factor*g_lesser(omega,-i*dt),lower,upper)[1]
+        
+    end
+
     for m in 0:Nt-1   ##0 2*Nt-1 for python convention match
-        tau=m*dt
+        #tau=m*dt
         for n in m+1:Nt-1
-            tau_p=n*dt
-            #g_l(omega) = 0.5*g_lesser(omega,dt*i,dt*j)
-            #g_g(omega) = 0.5*g_greater(omega,dt*i,dt*j)
-            
-            G[2*m+1,2*n+1+1]+= dt^2 * quadgk(omega -> factor*g_greater(omega,tau_p,tau+(dt*alpha)),lower,upper)[1]
-            G[2*m+1+1,2*n+1]+= -1.0 * dt^2 * quadgk(omega -> factor*g_lesser(omega,tau,tau_p+(dt*alpha)),lower,upper)[1]
+            #tau_p=n*dt
+            G[2*m+1,2*n+1+1]+= dt^2 * valsg[n-(m+incr)] #quadgk(omega -> factor*g_greater(omega,tau_p,tau+(dt*alpha)),lower,upper)[1]
+            G[2*m+1+1,2*n+1]-= dt^2 * valsl[m-(n+incr)] #quadgk(omega -> factor*g_lesser(omega,tau,tau_p+(dt*alpha)),lower,upper)[1]
         end
-        G[2*m+1,2*m+1+1] += dt^2 * quadgk(omega -> factor*g_lesser(omega,tau,tau+(dt*alpha)),lower,upper)[1]
+        G[2*m+1,2*m+1+1] += dt^2 * valsl[-incr]#quadgk(omega -> factor*g_lesser(omega,tau,tau+(dt*alpha)),lower,upper)[1]
         G[2*m+1,2*m+1+1] += - 1.
     end
-    #matshow(real.(G))
-    #show()
     G -=transpose(G)
     if convention=="b"
         for m in 0:Nt-1
@@ -376,213 +141,152 @@ function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lowe
     return G
 end
 
-function get_G(Delta::Matrix,dt;alpha::Int=1)
-    n=size(Delta,1)
-    G=zeros(ComplexF64,2*n,2*n)
-    #Delta[n,1]=-Delta[n,1]
-   # matshow(real.(Delta))
-    #show()
-    #for i in 1:2*n-1
-    #    G[i,i+1]=-0.5
-    #    G[i+1,i]=+0.5
-    #end
-    
-    for i in 1:n
-        for j in 1:n
-            if i>j
-                G[2*i,2*j-1]= -(dt^2)*Delta[i,j]
-                #G[2j-1,2*i]=-G[2*i,2*j-1]
-                G[2*i-1,2*j]= (dt^2)*Delta[j,i]
-                #G[2j,2*i-1]=-G[2*i-1,2*j]
-                
-            elseif i==j
-                G[2*i,2*j-1]= (-(dt^2)*Delta[i,j])+1.0
-                G[2*i-1,2*j]= ((dt^2)*Delta[i,j])-1.0
-                #G[2*i,2*j+1]= (-(dt^2)*Delta[i,j])+0.5
-                #G[2*i-1,2*j]= ((dt^2)*Delta[i,j])-0.5
-                
-            elseif i<j
-                G[2*i,2*j-1]= -(dt^2)*Delta[i,j]
-                G[2*i-1,2*j]= (dt^2)*Delta[j,i]
-            end
+function integrate_out_timesteps(G::AbstractMatrix,T_ren::Int)
+    dim_B_temp=size(G,1)
+    dim_B=div(dim_B_temp,T_ren)
+    @assert iszero(dim_B_temp%T_ren)
+    B_spec_dens = copy(G)
+    #add intermediate integration measure to integrate out internal legs
+    for i in 0:div(dim_B,2)-1
+        for j in 0:T_ren-2
+            B_spec_dens[2*i*T_ren+2*j+2,2*i*T_ren+3+2*j] += -1  
+            B_spec_dens[2*i*T_ren+3+2*j,2*i*T_ren+2+2*j] += 1  
         end
     end
-    ###match Julian's convention and multiply last two rows/columns by -1
-    #G[:,2*n-1:2*n]*=-1.0
-    #G[2*n-1:2*n,:]*=-1.0
     
-    #matshow(log10.(abs.(real.(G))))
-    #matshow(sign.(real.(G)))
-
-    #show()
-    #G=0.5(G-transpose(G))
-    #matshow(real.(G))
-    #matshow(log10.(abs.(real.(G+transpose(G)))))
-    #show()
-    #fout=h5open("D_beta10.h5","r+")
-    #fout["Deltat_G"] = G
-    #close(fout)
-    #matshow(real.(G))
-    #show()
-    #G=G[vcat(Vector(2:2*n),[1]),vcat(Vector(2:2*n),[1])]
-    #newG=G[vcat(Vector(2:2*n),[1]),:][:,vcat(Vector(2:2*n),[1])]
-    return G    
-end
-
-function get_G(Delta_l::Matrix,Delta_g::Matrix,dt)
-    n=size(Delta_l,1)
-    G=zeros(ComplexF64,2*n,2*n)
-    for i in 1:n
-        for j in 1:n
-            if i>j
-                G[2*i,2*j-1]= -(dt^2)*Delta_g[i,j]
-                G[2*i-1,2*j]= (dt^2)*Delta_l[j,i]
-            elseif i==j
-                G[2*i,2*j-1]= (-(dt^2)*Delta_g[i,j])+1
-                G[2*i-1,2*j]= ((dt^2)*Delta_g[i,j])-1
-            elseif i<j
-                G[2*i,2*j-1]= -(dt^2)*Delta_g[j,i]
-                G[2*i-1,2*j]= (dt^2)*Delta_l[i,j]
-            end
+    #select submatrix that contains all intermediate times that are integrated out
+    B_spec_dens_sub = zeros(eltype(G),dim_B_temp - dim_B, dim_B_temp - dim_B)
+    @inbounds for i in 0:div(dim_B,2)-1
+        @inbounds for j in 0:div(dim_B,2)-1
+            B_spec_dens_sub[i*(2*T_ren-2)+1:i*(2*T_ren-2 )+2*T_ren-2,j*(2*T_ren-2)+1:j*(2*T_ren-2 )+2*T_ren-2] = B_spec_dens[2*i*T_ren+2:2*(i*T_ren + T_ren)-1,2*j*T_ren+2:2*(j*T_ren + T_ren)-1]
         end
     end
-    #matshow(log10.(abs.(real.(G))))
-    #matshow(imag.(G))
-    #show()
-    
-    G=G[vcat(Vector(2:2*n),[1]),vcat(Vector(2:2*n),[1])]
-    #newG=G[vcat(Vector(2:2*n),[1]),:][:,vcat(Vector(2:2*n),[1])]
-    return G    
-end
-function get_correlation_matrix_Julian(Delta1,Delta2,dt)
-    G=get_G(Delta1,Delta2,dt)
-    #B=h5read("/mnt/home/bkloss/Downloads/B_julian.h5","B")
-    
-    #matshow(real.(G)+real.(B))
-    #show()
-    n=size(G,1)
-    Gh=transpose(G) * conj(G)
-    Gdd,R=eigen(Gh)
-    #plot(real.(Gdd))
-    #plot(imag.(Gdd),"--")
-    #show()
-    G_schur_complex = conj(transpose(R)) * G * conj(R)
-    #matshow(real.(G_schur_complex))
-    #matshow(imag.(G_schur_complex))
-    eigenvalues_complex=diag(G_schur_complex,1)[1:2:end]
-    D_phases=diagm(exp.(0.5im*angle.(ITensorGaussianMPS.interleave(eigenvalues_complex,eigenvalues_complex))))
-    R = R * D_phases
-    G_schur_real=conj(transpose(R)) * G * conj(R)
-    #matshow(real.(G_schur_real))
-    #show()
-    eigenvalues_real=real.(diag(G_schur_real,1)[1:2:end])
-    #plot(eigenvalues_real)
-    #show()
-    #hist(log10.(abs.(diff(eigenvalues_real))))
-    #plot(log10.(abs.(diff(eigenvalues_real))),'.')
-    #set_yscale("log")
-    #show()
-    corr_block_diag=zeros(eltype(G),2*n,2*n)
-    #plot(real.(eigenvalues_real))
-    #show()
-    for i in 1:div(n,2)
-        ew=eigenvalues_real[i]
-        norm=1+abs(ew)^2
-        corr_block_diag[2*i-1,2*i-1]=1/norm
-        corr_block_diag[2*i,2*i]=1/norm
-        corr_block_diag[2*i-1,2*i+n]=-ew/norm
-        corr_block_diag[2*i, 2*i-1+n] = ew/norm
-        corr_block_diag[2*i-1+n, 2*i] = conj(ew)/norm
-        corr_block_diag[2 * i + n, (2*i)-1] = - conj(ew)/norm 
-        corr_block_diag[2*i+n-1, 2*i+n-1] = abs(ew)^2/norm
-        corr_block_diag[2 * i + n, 2 * i + n] = abs(ew)^2/norm
+    #matrix coupling external legs to integrated (internal) legs
+    B_spec_dens_coupl =  zeros(eltype(G),dim_B_temp - dim_B,dim_B)
+    @inbounds for i in 0:div(dim_B,2)-1
+        @inbounds for j in 0:div(dim_B,2)-1
+            B_spec_dens_coupl[i*(2*T_ren-2)+1:i*(2*T_ren-2 )+2*T_ren-2,2*j+1] = B_spec_dens[2*i*T_ren+2:2*(i*T_ren + T_ren)-1,2*j*T_ren+1]
+            B_spec_dens_coupl[i*(2*T_ren-2)+1:i*(2*T_ren-2 )+2*T_ren-2,2*j+1+1] = B_spec_dens[2*i*T_ren+2:2*(i*T_ren + T_ren)-1,2*(j+1)*T_ren]
+        end
     end
-    double_R=zeros(eltype(G),2*n,2*n)
-    double_R[1:n,1:n]=R
-    double_R[n+1:end,n+1:end]=conj(R)
-    #matshow(real.(double_R))
-    #matshow(imag.(double_R))
-    #show()
-    corr_block_back_rotated = double_R * corr_block_diag * conj(transpose(double_R))
-    corr_block_back_rotated_2 = zeros(ComplexF64,2*n,2*n)
-    corr_block_back_rotated_2[n+1:end,n+1:end]=corr_block_back_rotated[1:n,1:n]
-    corr_block_back_rotated_2[n+1:end,1:n]=transpose(corr_block_back_rotated[1:n,n+1:end])
-    corr_block_back_rotated_2[1:n,n+1:end]=transpose(corr_block_back_rotated[n+1:end,1:n])
-    corr_block_back_rotated_2[1:n,1:n]=corr_block_back_rotated[n+1:end,n+1:end]
-    #corr_comp=h5read("/mnt/home/bkloss/.julia/v1.7/dev/ITensors/ITensorGaussianMPS/apps/influence/testcorr_Julian_unfolded.h5","c")
-    #corr_comp=f["c"]
-    #@show size(corr_comp),size(corr_block_back_rotated)
-    #matshow(real.(corr_block_back_rotated.-corr_comp))
-    #show()
     
+    B_spec_dens_ext =zeros(eltype(G),dim_B,dim_B)
+    @inbounds for i in 0:div(dim_B,2)-1
+        @inbounds for j in 0:div(dim_B,2)-1
+            B_spec_dens_ext[2*i+1,2*j+1] = B_spec_dens[2*i*T_ren+1,2*j*T_ren+1]
+            B_spec_dens_ext[2*i+1+1,2*j+1] = B_spec_dens[2*(i+1)*T_ren,2*j*T_ren+1]
+            B_spec_dens_ext[2*i+1,2*j+1+1] = B_spec_dens[2*i*T_ren+1,2*(j+1)*T_ren]
+            B_spec_dens_ext[2*i+1+1,2*j+1+1] = B_spec_dens[2*(i+1)*T_ren,2*(j+1)*T_ren]
+        end
+    end
     
-    corr_rotated =ITensorGaussianMPS.interleave(corr_block_back_rotated)
-    #matshow(real.(corr_rotated))
-    #show()
-    return corr_rotated
+    B_spec_dens = B_spec_dens_ext .+ (transpose(B_spec_dens_coupl) * inv(B_spec_dens_sub) * B_spec_dens_coupl)
+    return B_spec_dens   
 end
 
 
-function get_correlation_matrix_Julian(Delta,dt)
-    G=get_G(Delta,dt)
-    #matshow(real.(G))
-    #show()
+function evaluate_ni_aim(G::AbstractMatrix,ed::Pair;convention='a')
+    t=0 #hopping between spin species
+    B=reverse(G)
+    dim_B=size(B,1)
+    exponent=zeros(ComplexF64,dim_B*4,dim_B*4)
+    exponent[dim_B+1:2*dim_B,dim_B+1:2*dim_B]=B
+    exponent[2*dim_B+1:3*dim_B,2*dim_B+1:3*dim_B]=B
+    mu_up=ed[1]
+    mu_down=ed[2]
+    #return
+    println("a")
+    if convention=='a'
+        #spin upd
+        exponent[2*dim_B+1:3*dim_B-1,2:dim_B] -= diagm(ones(dim_B-1))
+        exponent[3*dim_B,1] += -1
+        exponent[2:dim_B,(2*dim_B+1):3*dim_B-1] += diagm(ones(dim_B-1))
+        exponent[1,3*dim_B] += 1
+        #spin down
+        exponent[3*dim_B+2:4*dim_B,dim_B+1:2*dim_B-1] -= diagm(ones(dim_B-1))
+        exponent[3*dim_B+1,2*dim_B] += -1
+        exponent[dim_B+1:2*dim_B-1,3*dim_B+2:4*dim_B] += diagm(ones(dim_B-1))
+        exponent[2*dim_B,3*dim_B+1] += +1
+    elseif convention=='b'
+        error("Not implemented yet")
+    end
+    T=1-tanh(t/2)^2
+    println("b")
+    for i in 0:div(dim_B,2)-2
+        # forward 
+        # (matrix elements between up -> down), last factors of (-1) are sign changes to test overlap form
+        exponent[dim_B - 2 - 2*i + 1, 4*dim_B - 1 - 2*i + 1] += -1. * tanh(t/2) *2/T *exp(-1. * mu_up) 
+        exponent[dim_B - 1 - 2*i + 1, 4*dim_B - 2 - 2*i + 1] -= -1. * tanh(t/2)*2/T *exp(-1. * mu_down) 
+        #(matrix elements between up -> up)
+        exponent[dim_B - 2 - 2*i + 1, dim_B - 1 - 2*i + 1] += 1 *cosh(t) *exp(-1 * mu_up) *(-1.) 
+        #(matrix elements between down -> down)
+        exponent[4*dim_B - 2 - 2*i + 1, 4*dim_B - 1 - 2*i + 1] += 1 *cosh(t) *exp(-1. * mu_down) *(-1.)
 
-    #_,S,_=svd(G)
-    #plot(abs.(S[1:(size(G,1)-1)] .- S[end]),label=string(div(size(G,1),2)))
-        
-    return exp_bcs_julian(G)
-end 
+        # forward Transpose (antisymm)
+        exponent[4*dim_B - 1 - 2*i + 1, dim_B - 2 - 2*i + 1] += 1 * tanh(t/2)*2/T *exp(-1 * mu_up) 
+        exponent[4*dim_B - 2 - 2*i + 1, dim_B - 1 - 2*i + 1] -= 1. * tanh(t/2)*2/T *exp(-1. * mu_down)
+        exponent[dim_B - 1 - 2*i + 1,dim_B - 2 - 2*i + 1] += -1 *cosh(t) *exp(-1. * mu_up) *(-1.)
+        exponent[4*dim_B - 1 - 2*i + 1, 4*dim_B - 2 - 2*i + 1] += -1 *cosh(t) *exp(-1. * mu_down) *(-1.)
+    end
+    #last application contains antiperiodic bc.:
+    println("c")
+    exponent[1,3*dim_B+2] += -1. * tanh(t/2) *2/T *exp(-1. * mu_up) *(-1.) 
+    exponent[2,3*dim_B+1] -= -1. * tanh(t/2)*2/T *exp(-1. * mu_down) *(-1.)
+    #(matrix elements between up -> up)
+    exponent[0 + 1, 1 + 1] += 1 *cosh(t) *exp(-1 * mu_up) *(-1.) *(-1.)
+    #(matrix elements between down -> down)
+    exponent[3*dim_B  + 1, 3*dim_B + 1 + 1] += 1 *cosh(t) *exp(-1. * mu_down) *(-1.) *(-1.)
+
+    # forward Transpose (antisymm)
+    exponent[3*dim_B+2,1] += 1 * tanh(t/2)*2/T *exp(-1 * mu_up) *(-1.) 
+    exponent[3*dim_B + 1,1 + 1] -= 1. * tanh(t/2)*2/T *exp(-1. * mu_down) *(-1.)
+    exponent[1 + 1,0 + 1] += -1 *cosh(t) *exp(-1. * mu_up) *(-1.) *(-1.)
+    exponent[3*dim_B + 1 + 1,3*dim_B + 1] += -1 *cosh(t) *exp(-1. * mu_down) *(-1.) *(-1.)
+
+    
+    exponent_inv = inv(exponent)#this is the matrix whose elements yield the propagator
+    exponent_inv_T = Matrix(transpose(exponent_inv))
+    res=zeros(ComplexF64,2,div(dim_B,2))
+    for tau in 0:div(dim_B,2)-1
+        if convention=='a'
+            m=exponent_inv_T[[1,3*dim_B-2*tau],[1,3*dim_B-2*tau]]
+            @assert all(abs.(diag(m)) .< 1e-12)
+            m[1,1]=0
+            m[2,2]=0
+            
+            m[2,1]=-conj(m[1,2])
+            res[1,tau+1]=pfaffian(real.(m))
+            m=exponent_inv_T[[2*dim_B-2*tau,3*dim_B+1],[2*dim_B-2*tau,3*dim_B+1]]
+            m[2,1]=-conj(m[1,2])
+            @assert all(abs.(diag(m)) .< 1e-12)
+            m[1,1]=0
+            m[2,2]=0
+            res[2,tau+1]=pfaffian(real.(m))
+        else
+            error("Not implemented")
+        end
+    end
+    return res
+
+end
+
 
 function exp_bcs_julian(G::Matrix)
-    #G=transpose(G)
     n=size(G,1)
-    #matshow(real.(G+transpose(G)))
-    #show()
     dim_G=size(G,1)
     random_part = rand(dim_G,dim_G) * 1.e-8
     G += random_part - transpose(random_part)
     Gh=transpose(G) * conj(G)
-    Gdd,R=eigen(Hermitian(Gh))
-    #matshow(real.(R * R'))
-    #matshow(real.(R' * R))
-    
-    #show()
-    #@show size(R)
-    #plot(real.(Gdd))
-    #plot(imag.(Gdd),"--")
-    #show()
+    @time begin
+        Gdd,R=eigen(Hermitian(Gh))
+    end
     G_schur_complex = R' * G * conj(R)
-    #println("Showing Schur complex")
-    #matshow(real.(G_schur_complex))
-    #matshow(imag.(G_schur_complex))
-    #show()
-    #println("A")
     eigenvalues_complex=diag(G_schur_complex,1)[1:2:end]
-    #plot(real.(eigenvalues_complex))
-    #plot(imag.(eigenvalues_complex),"--")
-    #show()
     D_phases=diagm(exp.(0.5im*angle.(ITensorGaussianMPS.interleave(eigenvalues_complex,eigenvalues_complex))))
     R = R * D_phases
     G_schur_real=conj(transpose(R)) * G * conj(R)
-    #matshow(real.(G_schur_real))
-    #show()
-   # println("Showing Schur real")
-    #matshow(real.(G_schur_real))
-    #matshow(imag.(G_schur_real))
-    #show()
-    #println("B")
     eigenvalues_real=real.(diag(G_schur_real,1)[1:2:end])
-    #plot(eigenvalues_real)
-    #show()
-    #hist(log10.(abs.(diff(eigenvalues_real))))
-    #plot(log10.(abs.(diff(eigenvalues_real))),'.')
-    #set_yscale("log")
-    #show()
     corr_block_diag=zeros(eltype(G),2*n,2*n)
-    #plot(real.(eigenvalues_real))
-    #show()
-    #println("C")
     for i in 1:div(n,2)
         ew=eigenvalues_real[i]
         norm=1+abs(ew)^2
@@ -598,82 +302,11 @@ function exp_bcs_julian(G::Matrix)
     double_R=zeros(eltype(G),2*n,2*n)
     double_R[1:n,1:n]=R
     double_R[n+1:end,n+1:end]=conj(R)
-    #matshow(real.(double_R))
-    #matshow(imag.(double_R))
-    #show()
-    #println("D")
     corr_block_back_rotated = double_R * corr_block_diag * conj(transpose(double_R))
-    corr_block_back_rotated_2 = zeros(ComplexF64,2*n,2*n)
-    corr_block_back_rotated_2[n+1:end,n+1:end]=corr_block_back_rotated[1:n,1:n]
-    corr_block_back_rotated_2[n+1:end,1:n]=transpose(corr_block_back_rotated[1:n,n+1:end])
-    corr_block_back_rotated_2[1:n,n+1:end]=transpose(corr_block_back_rotated[n+1:end,1:n])
-    corr_block_back_rotated_2[1:n,1:n]=corr_block_back_rotated[n+1:end,n+1:end]
-    #corr_comp=h5read("/mnt/home/bkloss/.julia/v1.7/dev/ITensors/ITensorGaussianMPS/apps/influence/testcorr_Julian_unfolded.h5","c")
-    #corr_comp=f["c"]
-    #@show size(corr_comp),size(corr_block_back_rotated)
-    #matshow(real.(corr_block_back_rotated.-corr_comp))
-    #show()
-    
-    
     corr_rotated =ITensorGaussianMPS.interleave(corr_block_back_rotated)
     return corr_rotated
 end
 
-function get_correlation_matrix(Delta,dt)
-    ###takes as input discretization timestep dt and Fourier transformed Hybridization function Delta(t)
-    ###works on blocked format and interleaves creation/destruction operators at last step
-    println("starting Benedikt's version of computing the correlation matrix")
-    G=get_G(Delta,dt)
-
-    n=size(G,1)
-    G=G[vcat(Vector(2:n),[1]),vcat(Vector(2:n),[1])]
-    #fout=h5open("testhyb_calG_fromITensor.h5","w")
-    #fout["G"] = G
-    #close(fout)
-    Gaug=zeros(eltype(G),2*n,2*n)
-    Gaug[n+1:2*n,1:n]=G
-    Gexp=exp(Gaug)
-    
-    #matshow(real.(Gexp+Gexp'))
-    #show()
-    #vacvec=zeros(ComplexF64,2*n)
-    vacmat=zeros(ComplexF64,2*n,2*n)
-    #vacvec[1:n].=1.0
-    vacmat[1:n,1:n]=Matrix(LinearAlgebra.I(n))
-    #matshow(real.(vacmat))
-    #show()
-    #Gexpaug=Gexp .+ Gexp'
-    thec=(Gexp)*vacmat*transpose(Gexp)
-    println("transformed G")
-    matshow(imag.(thec))
-    colorbar()
-    show()
-
-    thec=ITensorGaussianMPS.interleave(thec)
-    return 0.5*(thec+thec')
-end
-
-function get_correlation_matrix(G)
-    ###takes as input discretization timestep dt and Fourier transformed Hybridization function Delta(t)
-    ###works on blocked format and interleaves creation/destruction operators at last step
-    n=size(G,1)
-    Gaug=zeros(eltype(G),2*n,2*n)
-    Gaug[n+1:2*n,1:n]=G
-    Gexp=exp(Gaug)
-    #@show Gexp
-    Gaug=zeros(eltype(G),2*n,2*n)
-    Gaug[1:n,n+1:2*n]=-conj(G)
-    Gexp2=exp(Gaug)
-    #Gexp2=
-    vacmat=zeros(ComplexF64,2*n,2*n)
-    vacmat[1:n,1:n]=Matrix(LinearAlgebra.I(n))
-    
-    thec=Gexp*vacmat*transpose(Gexp)
-    println("transformed G")
-    thec=ITensorGaussianMPS.interleave(thec)
-    #@show thec
-    return thec
-end
 
 function get_vaccuum_correlation_matrix(Nsteps::Int)
     M=zeros(ComplexF64,4*Nsteps,4*Nsteps)
