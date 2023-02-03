@@ -1,10 +1,10 @@
 #using ITensors
-
-
 include("impurity_tensors.jl")
 
 function get_any_T(which_T, U,dt,ed,which_trafo::Int,prefactor, args)
-    T=which_T(U,dt,ed)
+    T=which_T(U,dt,ed,Val(2))
+    #T=which_T(U,dt,ed)
+    
     return convert_to_itensor(transform_particle_hole(T,which_trafo;prefactor=prefactor),args...)
 end
 
@@ -43,9 +43,12 @@ function get_state_projections(site_r,site_l)
 end
 
 
-function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,combiners_r,states::Function,state_projection::ITensor;states_kwargs...)
+get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,combiners_r,states::Function,state_projection::ITensor,;states_kwargs...)=get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,combiners_r,states,state_projection, false;states_kwargs...)
+function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,combiners_r,states::Function,state_projection::ITensor, is_ph::Bool;states_kwargs...)
     #assumes merged pairs of sites
     #evaluates G(t[tind],0)=<cdag(0)c(t[tind])> when contracted with IM-MPSs
+    
+    mode = is_ph ? 1 : 0
     M=length(combined_sites_l)
     #i=1 ##irrelevant here
     thefun=states(M-1;states_kwargs...)
@@ -57,13 +60,13 @@ function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,c
     prefactor_fun = i -> isodd(i) ? -1 : 1
     for n in 2:M-1
         #@show n,M
-        push!(preMPO, get_any_T(thefun(n-1),U,dt,ed,2,prefactor_fun(n),(combiners_l[n],combiners_r[n])))
+        push!(preMPO, get_any_T(thefun(n-1),U,dt,ed,mode,prefactor_fun(n),(combiners_l[n],combiners_r[n])))
     end
     #println("done with bulk")
     #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))
     #@show inds(state_projection)
     #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M])*dag(state_projection))
-    push!(preMPO, get_any_T(thefun(M-1),U,dt,ed,2,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))
+    push!(preMPO, get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))
     #println("done with all")
     return MPO(preMPO)
 end
@@ -71,15 +74,17 @@ end
 
 
 ###CHANGE
-function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS,psir::MPS,combiners_l::Vector{ITensor},combiners_r::Vector{ITensor};spin="up")
+function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS,psir::MPS,combiners_l::Vector{ITensor},combiners_r::Vector{ITensor},is_ph::Bool;spin="up")
     ###take care of G(0) separately?
     #0, length(H) + 1, 2, H, Vector{ITensor}(undef, length(H))
+    @show is_ph
     P=ITensors.ProjMPO(0, length(envMPO) + 1, 1, envMPO, Vector{ITensor}(undef, length(envMPO)))
     #@show "getcorr"
     #set position to beginning of chain
     P=position!(P,psil,psir,1)
     res=ComplexF64[]
     #@show "before loop"
+    mode = is_ph ? 1 : 0
     for pos in 2:length(envMPO)
         #@show pos
         P=position!(P,psil,psir,pos)
@@ -109,13 +114,15 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
                 localterm=boundaryMPO[length(envMPO)]
             else
                 prefactor_fun = i -> isodd(i) ? -1 : 1
-                localterm=get_any_T(get_Tcr,U,dt,ed,2,prefactor_fun(pos),(combl,combr))
+                ##the prefactor in front of get_any_T for is_ph takes into account that
+                ##Tcr has an additional sign from the creation operator that the definition didn't take care of yet
+                localterm=(is_ph ? prefactor_fun(pos) : 1) *get_any_T(get_Tcr,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
             end
         else
             if pos==length(envMPO)
                 localterm=boundaryMPO[length(envMPO)]
             else
-                localterm=get_any_T(get_Tcl,U,dt,ed,2,prefactor_fun(pos),(combl,combr))
+                localterm=get_any_T(get_Tcl,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
                 #localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r,combl,combr)
             end
         end

@@ -28,27 +28,17 @@ function apply_ph_everyother(c::AbstractMatrix)
     return newc
 end
 
-
-function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
+function get_IM_from_corr(c::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
     eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
     maxblocksize=get(kwargs, :maxblocksize, 8)
     minblocksize=get(kwargs, :minblocksize, 1)
     cutoff=get(kwargs,:cutoff,0.0)
     maxdim=get(kwargs,:maxdim,2^maxblocksize)
-    #Gph=apply_ph_everyother(G)
-    #matshow(Gph)
-
-    BLAS.set_num_threads(32)
-    println("Exponentiang G for corr matrix")
-    @time begin
-        c=exp_bcs_julian(G)
-    end
     N=size(c,1)
-    
     if reshuffle==true
         #c=c[reverse(Vector(1:N)),reverse(Vector(1:N))]
-        #shuffledinds=vcat(Vector(3:N),[1,2])
-        shuffledinds=sortperm(vcat(Vector(3:N),[1,2]))
+        shuffledinds=vcat(Vector(3:N),[1,2])
+        #shuffledinds=sortperm(vcat(Vector(3:N),[1,2]))
         
         c=c[shuffledinds,:][:,shuffledinds]
     end
@@ -69,6 +59,16 @@ function get_IM(G::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs...)
     )
     end
     return psi, c
+end
+
+
+function get_IM(G::Matrix,reshuffle::Bool,ph::Bool;kwargs...)
+    BLAS.set_num_threads(32)
+    println("Exponentiating G for corr matrix")
+    @time begin
+        c=exp_bcs_julian(G)
+    end
+    return get_IM_from_corr(c,reshuffle,ph;kwargs...)
 end
 
 function evaluate_flatDOS_lesser(lower,upper,beta,tau,tau_p)

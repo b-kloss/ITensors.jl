@@ -1,12 +1,68 @@
 
-contract(psi_l::MPS,imp_parameters, disc_parameters;shift=false,ph=true)=contract(psi_l,psi_l,imp_parameters, disc_parameters;shift=false,ph=true)
+get_val(::Val{x}) where x = x
+contract(psi_l::MPS,imp_parameters, disc_parameters;shift=false,ph=true,env=true)=contract(psi_l,psi_l,imp_parameters, disc_parameters;shift=shift,ph=ph,env=env)
 
-function contract(psi_l::MPS,psi_r::MPS, imp_params,disc_params;shift=false,ph=true)
-    contract(psi_l,psi_r, imp_params,disc_params,Val(shift),Val(ph))
+function contract(psi_l::MPS,psi_r::MPS, imp_params,disc_params;shift=false,ph=true,env=true)
+    contract(psi_l,psi_r, imp_params,disc_params,Val(shift),Val(ph),Val(env))
 end
 
-function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::Val{false},ph::Val{true})
-    is_ph=true
+function contract(psi_l::MPS,psi_r::MPS,imp_parameters,disc_parameters,shift::Val{true},ph::Union{Val{true},Val{false}},env::Val{false})
+    println("in contract with ph and shift")
+    include("imp_refactored.jl")
+    is_ph=get_val(ph)
+    @show is_ph
+    U,dt,ed=imp_parameters
+    beta,Nt=disc_parameters#potentially more in the future, like Trotter order
+    @assert beta/Nt==dt
+    taus=Vector((0:Nt-1))*dt
+    # merge pairs of sites (1,2),(3,4),(N-1,N)
+    combiners_r,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_l)
+    combiners_l,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_r)
+    #combined_sites_r,psi_r_fused,=fuse_indices_pairwise(psi_r)
+    #combined_sites_l,psi_l_fused,=fuse_indices_pairwise(psi_l)
+    @show inner(psi_l_fused,psi_r_fused)
+    @show U, dt, ed
+    #Z_MPO=get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,get_Z_MPO_fun)
+    Z_MPO=get_Z_MPO(U,dt,ed,combiners_l,combiners_r,get_Z_MPO_fun,is_ph)
+
+    Z=logdot(dag(psi_l_fused),(Z_MPO*dag(prime(psi_r_fused))))
+    @show Z
+    #return
+    phase=exp(-1im*imag(Z)/2.0)
+    @show phase
+    if abs(real(phase)-1.0) >1e-8
+        psi_r_fused=psi_r_fused*phase
+        psi_l_fused=psi_l_fused*phase
+        Z=logdot(dag(psi_l_fused),Z_MPO*dag(prime(psi_r_fused)))
+        @show Z
+    
+    end
+    #centers=get_MPO(U,dt,ed,combined_sites_l,combined_sites_r,get_1PGreens_MPO;spin0="up",spin1="up")
+    centers=get_MPO(U,dt,ed,combiners_l,combiners_r,get_1PGreens_MPO,is_ph;spin0="up",spin1="up")
+
+    results=ComplexF64[]
+    counter=0
+    BLAS.set_num_threads(1)
+    #@show exp(logdot(dag(prime(psi_l_fused)),centers[length(centers)]*psi_r_fused)-Z)
+    results=zeros(ComplexF64,length(taus))
+    sitefactor=real(-Z)/float(length(centers[1]))
+    Threads.@threads for i = 1:length(taus)
+        for site in 1:length(centers[i])
+            centers[i][site]*=exp(sitefactor)
+        end
+        #M=normalize(centers[i]; (lognorm!)=[-real(Z)])
+        results[i] = exp(logdot(dag(psi_l_fused),centers[i]*dag(prime(psi_r_fused))))
+    end
+    return Z, results
+end
+
+
+
+function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::Val{false},ph::Union{Val{true},Val{false}},env::Val{true})
+    print("in contract false,true,true")
+    include("imp_noshift_refactored.jl")
+    #is_ph=true
+    is_ph=get_val(ph)
     U,dt,ed=imp_parameters
     beta,Nt=disc_parameters#potentially more in the future, like Trotter order
     @assert beta/Nt==dt
@@ -29,8 +85,15 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
         #push!(env_boundary_MPOs_dn,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_boundary_MPO_fun,proj,is_ph;spin="down"))
     end
     Z=0.0
-    weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
-    ##compute partition function sequentially
+    if is_ph
+        weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
+    else
+        #weights=[1.0,-1.0,-1.0,1.0]    #legacy
+        weights=[-1.0,1.0,1.0,-1.0]  ###appropriate for non-PH transformed
+        
+    end
+    @show weights, is_ph
+        ##compute partition function sequentially
     for (i,Z_MPO) in enumerate(Z_MPOs)
         contr=logdot(dag(psi_l_fused),product(Z_MPO,dag(prime(psi_r_fused));cutoff=1e-16))
         Z=Z+weights[i]*exp(contr)
@@ -83,3 +146,4 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     ress=sum(res,dims=3)
     return Z,ress
 end
+

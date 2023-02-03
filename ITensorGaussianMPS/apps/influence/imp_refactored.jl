@@ -4,19 +4,23 @@
 include("impurity_tensors.jl")
 
 function get_any_T(which_T, U,dt,ed,which_trafo::Int,prefactor, args)
-    T=which_T(U,dt,ed)
+    T=which_T(U,dt,ed,Val(2))
+    #T=which_T(U,dt,ed)
+    
     return convert_to_itensor(transform_particle_hole(T,which_trafo;prefactor=prefactor),args...)
 end
 
-function get_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function;spin0="up",spin1="up")
+function get_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function,is_ph::Bool;spin0="up",spin1="up")
     #assumes merged pairs of sites
     #evaluates G(t[tind],0)=<cdag(0)c(t[tind])> when contracted with IM-MPSs
     M=length(combined_sites_l)
     states_vec=MPO[]
+    mode = is_ph ? 2 : 0
     for i in 1:M
         thefun = states(i,M;spin0=spin0,spin1=spin1)
-        prefactor_fun = i -> isodd(i) ? -1 : 1
-        push!(states_vec,MPO([convert_to_itensor(transform_particle_hole(thefun(n)(U,dt,ed),1;prefactor=prefactor_fun(n)),combined_sites_l[n],combined_sites_r[n]) for n in 1:M]))
+        prefactor_fun = j -> isodd(j) ? -1 : 1
+        prefactor_for_op = !is_ph ?  (n -> 1) : isodd(i) ? (n -> n==i ? -1 : 1) : (n -> 1)
+        push!(states_vec,MPO([prefactor_for_op(n) * convert_to_itensor(transform_particle_hole(thefun(n)(U,dt,ed),mode;prefactor=prefactor_fun(n)),combined_sites_l[n],combined_sites_r[n]) for n in 1:M]))
         
         #return 
     
@@ -63,17 +67,17 @@ function get_GFel(PM::ProjMPO,IMu::MPS,IMd::MPS,i::Int)
 end
 
 
-function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function)
+function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Function,is_ph::Bool;)
     #assumes merged pairs of sites
     #evaluates G(t[tind],0)=<cdag(0)c(t[tind])> when contracted with IM-MPSs
     M=length(combined_sites_l)
     #i=1 ##irrelevant here
+    mode= is_ph ? 2 : 0
     thefun=states(M)
     prefactor_fun = i -> isodd(i) ? -1 : 1
-    return MPO([get_any_T(thefun(n),U,dt,ed,1,prefactor_fun(n),(combined_sites_l[n],combined_sites_r[n])) for n in 1:M])
+    return MPO([get_any_T(thefun(n),U,dt,ed,mode,prefactor_fun(n),(combined_sites_l[n],combined_sites_r[n])) for n in 1:M])
     #return MPO([convert_to_itensor(transform_particle_hole(thefun(n)(U,dt,ed),1;prefactor=prefactor_fun(n)),combined_sites_l[n],combined_sites_r[n]) for n in 1:M])
     #return MPO([thefun(n)(U,dt,ed,combined_sites_l[n],combined_sites_r[n]) for n in 1:M])
-    
 end
 
 
