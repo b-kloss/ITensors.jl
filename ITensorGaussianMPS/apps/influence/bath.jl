@@ -2,6 +2,7 @@
 using LinearAlgebra
 using PyPlot
 using QuadGK
+using SkewLinearAlgebra
 
 function apply_ph_everyother(c::AbstractMatrix)
     cb=ITensorGaussianMPS.reverse_interleave(c)
@@ -61,6 +62,13 @@ function get_IM_from_corr(c::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs..
     return psi, c
 end
 
+function get_circuits(c::Matrix,reshuffle::Bool)
+    if reshuffle==true
+        shuffledinds=vcat(Vector(3:N),[1,2])
+        c=c[shuffledinds,:][:,shuffledinds]
+    end
+    Λr, C, indsnext, relinds=ITensorGaussianMPS.correlation_matrix_to_gmps_brickwall_tailed
+end
 
 function get_IM(G::Matrix,reshuffle::Bool,ph::Bool;kwargs...)
     BLAS.set_num_threads(32)
@@ -90,9 +98,9 @@ function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lowe
     """exactly the way Julian does it up to units/factors"""
     G=zeros(ComplexF64,(2*Nt,2*Nt))
     #G_opt=zeros(ComplexF64,(2*Nt,2*Nt))
-    
+    factor=1.0/(upper-lower)
     #convention="b"
-    factor=0.5/upper
+    #factor=
     @assert (alpha==0.0 || alpha==1.0)
     incr=Int(alpha)
     valsg=Dict()
