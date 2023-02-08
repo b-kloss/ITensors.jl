@@ -140,44 +140,56 @@ function transform_particle_hole(T,which::Int;prefactor=1)
 end
 
 function convert_to_itensor(T,rinds::t,linds::t) where t<:Index
-    return itensor(T,linds',dag(rinds))
+    #return itensor(T,linds',dag(rinds))
+    return itensor(T,linds,rinds)
 end
 
 function convert_to_itensor(T,rsc::ITensor,lsc::ITensor)
     r1,r2=uncombinedinds(rsc)
     l1,l2=uncombinedinds(lsc)
-    return itensor(T,dag(l1'),dag(l2'),r1,r2)*dag(rsc)*lsc'
+    #return itensor(T,dag(l1'),dag(l2'),r1,r2)*dag(rsc)*lsc'
+    return itensor(T,l1,l2,r1,r2)*dag(rsc)*dag(lsc) ##dag on combiners should be correct?
+
 end
 
 function convert_to_itensor(T,ls1::t,ls2::t,rs1::t,rs2::t) where t<:Index
-    return itensor(T, ls1', ls2', dag(rs1), dag(rs2))
+    #return itensor(T, ls1', ls2', dag(rs1), dag(rs2))
+    return itensor(T, ls1, ls2, rs1, rs2)
 end
 
 #space_ii = all(hasqns, sites_a) || all(hasqns,sites_b)  ? [QN() => 1] : 1 #short circuiting or should be fine
 #l = [Index(space_ii, "Link,l=$ii") for ii in 1:(N - 1)]
 
 function convert_to_itensor(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::t,lr::t) where t<:Index
-    return itensor(T, dag(ll),ls1', ls2', dag(rs1), dag(rs2),lr)
+    #return itensor(T, dag(ll),ls1', ls2', dag(rs1), dag(rs2),lr)
+    return itensor(T, dag(ll),ls1, ls2, rs1, rs2,lr)
 end
 
 function convert_to_itensor(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::Nothing,lr::t) where t<:Index
-    return itensor(T,ls1', ls2', dag(rs1), dag(rs2),lr)
+    #return itensor(T,ls1', ls2', dag(rs1), dag(rs2),lr)
+    return itensor(T,ls1, ls2, rs1, rs2,lr)
 end
 
 function convert_to_itensor(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::t,lr::Nothing) where t<:Index
-    return itensor(T,dag(ll), ls1', ls2', dag(rs1), dag(rs2))
+    #return itensor(T,dag(ll), ls1', ls2', dag(rs1), dag(rs2))
+    return itensor(T,dag(ll), ls1, ls2, rs1, rs2)
+
 end
 
 function convert_to_two_itensors(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::t,lr::t) where t<:Index
     iT=convert_to_itensor(T,ls1,ls2,rs1,rs2,ll,lr)
-    u,s,v=svd(iT, dag(ll),ls1',dag(rs1))
+    #u,s,v=svd(iT, dag(ll),ls1',dag(rs1))
+    u,s,v=svd(iT, dag(ll),ls1,rs1)
+    
     #absorb s in one of the tensors, say V
     return u, s*v
 end
 
 function convert_to_two_itensors(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::Nothing,lr::t) where t<:Index
     iT=convert_to_itensor(T, ls1, ls2, rs1, rs2,ll,lr)
-    u,s,v=svd(iT, ls1',dag(rs1))
+    #u,s,v=svd(iT, ls1',dag(rs1))
+    u,s,v=svd(iT, ls1,rs1)
+    
     #absorb s in one of the tensors, say V
     return u, s*v
 end
@@ -185,7 +197,9 @@ end
 function convert_to_two_itensors(T,ls1::t,ls2::t,rs1::t,rs2::t,ll::t,lr::Nothing) where t<:Index
     #iT=itensor(T, ls1', ls2', dag(rs1), dag(rs2),lr)
     iT=convert_to_itensor(T, ls1, ls2, rs1, rs2,ll,lr)
-    u,s,v=svd(iT, ll,ls1',dag(rs1))
+    #u,s,v=svd(iT, ll,ls1',dag(rs1))
+    u,s,v=svd(iT, ll,ls1,rs1)
+    
     #absorb s in one of the tensors, say V
     return u, s*v
 end

@@ -36,7 +36,7 @@ function get_state_projections(site_r,site_l)
     projections=ITensor[]
     for astate in possible_states
         for bstate in reverse(possible_states)
-            push!(projections,dag(state(site_r,astate))*(state(prime(site_l),bstate)))
+            push!(projections,(state(site_r,astate))*(state(site_l,bstate)))
         end
     end
     return projections
@@ -53,7 +53,7 @@ function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,c
     #i=1 ##irrelevant here
     thefun=states(M-1;states_kwargs...)
     preMPO=ITensor[]
-    push!(preMPO,state_projection)
+    push!(preMPO,dag(state_projection))
     #@show typeof(combiners_l)
     #@show typeof(combiners_r)
     #return MPO([get_any_T(thefun(n-1),U,dt,ed,1,prefactor_fun(n),(combiners_l[n],combiners_r[n])) for n in 1:M])
@@ -66,8 +66,14 @@ function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,c
     #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))
     #@show inds(state_projection)
     #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M])*dag(state_projection))
-    push!(preMPO, get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))
+    println("Is it problem with dag stateproj?")
+    @show inds(last(preMPO))
+    push!(preMPO, (dag(get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))))
     #println("done with all")
+    
+    @show inds(last(preMPO))
+    @show inds(state_projection)
+    println("Apparently not.")
     return MPO(preMPO)
 end
 
@@ -79,11 +85,12 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
     #0, length(H) + 1, 2, H, Vector{ITensor}(undef, length(H))
     @show is_ph
     P=ITensors.ProjMPO(0, length(envMPO) + 1, 1, envMPO, Vector{ITensor}(undef, length(envMPO)))
-    #@show "getcorr"
+    @show "getcorr"
     #set position to beginning of chain
     P=position!(P,psil,psir,1)
     res=ComplexF64[]
     #@show "before loop"
+    #return
     mode = is_ph ? 1 : 0
     for pos in 2:length(envMPO)
         #@show pos
@@ -126,11 +133,11 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
                 #localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r,combl,combr)
             end
         end
-        #println("after obtaining local term")
-        val=(L*psil[pos])*localterm*(prime(dag(psir[pos]))*R)
-        #println("after contracting local term")
-        
-        #@show scalar(val)
+        println("after obtaining local term")
+        val=(L*psil[pos])*localterm*((psir[pos])*R)
+        println("after contracting local term")
+        @assert order(val)==0
+        @show scalar(val)
         push!(res,Complex(scalar(val)))
     end
     

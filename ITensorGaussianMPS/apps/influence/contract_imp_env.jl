@@ -1,6 +1,6 @@
 
 get_val(::Val{x}) where x = x
-contract(psi_l::MPS,imp_parameters, disc_parameters;shift=false,ph=true,env=true)=contract(psi_l,psi_l,imp_parameters, disc_parameters;shift=shift,ph=ph,env=env)
+#contract(psi_l::MPS,imp_parameters, disc_parameters;shift=false,ph=true,env=true)=contract(psi_l,psi_l,imp_parameters, disc_parameters;shift=shift,ph=ph,env=env)
 
 function contract(psi_l::MPS,psi_r::MPS, imp_params,disc_params;shift=false,ph=true,env=true)
     contract(psi_l,psi_r, imp_params,disc_params,Val(shift),Val(ph),Val(env))
@@ -16,6 +16,7 @@ function contract(psi_l::MPS,psi_r::MPS,imp_parameters,disc_parameters,shift::Va
     @assert beta/Nt==dt
     taus=Vector((0:Nt-1))*dt
     # merge pairs of sites (1,2),(3,4),(N-1,N)
+    println("fuse inds")
     combiners_r,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_l)
     combiners_l,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_r)
     #combined_sites_r,psi_r_fused,=fuse_indices_pairwise(psi_r)
@@ -24,8 +25,8 @@ function contract(psi_l::MPS,psi_r::MPS,imp_parameters,disc_parameters,shift::Va
     @show U, dt, ed
     #Z_MPO=get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,get_Z_MPO_fun)
     Z_MPO=get_Z_MPO(U,dt,ed,combiners_l,combiners_r,get_Z_MPO_fun,is_ph)
-
-    Z=logdot(dag(psi_l_fused),(Z_MPO*dag(prime(psi_r_fused))))
+    println("got ZMPO")
+    Z=logdot(dag(psi_l_fused),(Z_MPO*psi_r_fused))
     @show Z
     #return
     phase=exp(-1im*imag(Z)/2.0)
@@ -33,7 +34,7 @@ function contract(psi_l::MPS,psi_r::MPS,imp_parameters,disc_parameters,shift::Va
     if abs(real(phase)-1.0) >1e-8
         psi_r_fused=psi_r_fused*phase
         psi_l_fused=psi_l_fused*phase
-        Z=logdot(dag(psi_l_fused),Z_MPO*dag(prime(psi_r_fused)))
+        Z=logdot(dag(psi_l_fused),Z_MPO*(psi_r_fused))
         @show Z
     
     end
@@ -51,7 +52,7 @@ function contract(psi_l::MPS,psi_r::MPS,imp_parameters,disc_parameters,shift::Va
             centers[i][site]*=exp(sitefactor)
         end
         #M=normalize(centers[i]; (lognorm!)=[-real(Z)])
-        results[i] = exp(logdot(dag(psi_l_fused),centers[i]*dag(prime(psi_r_fused))))
+        results[i] = exp(logdot(dag(psi_l_fused),centers[i]*psi_r_fused))
     end
     return Z, results
 end
@@ -71,7 +72,7 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     combiners_r,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_l)
     combiners_l,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_r)
     # MPS on a ring implemented by projecting onto each element of the trace
-    projs=get_state_projections(combined_sites_r[1],combined_sites_l[1])
+    projs=get_state_projections(combined_sites_r[1],combined_sites_l[1])    ###FIXME
     Z_MPOs=[]
     env_MPOs_up=[]
     env_boundary_MPOs_up=[]
@@ -86,7 +87,8 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     end
     Z=0.0
     if is_ph
-        weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
+        #weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
+        weights=[-1.0,1.0,1.0,-1.0] 
     else
         #weights=[1.0,-1.0,-1.0,1.0]    #legacy
         weights=[-1.0,1.0,1.0,-1.0]  ###appropriate for non-PH transformed
@@ -94,11 +96,16 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     end
     @show weights, is_ph
         ##compute partition function sequentially
+    
     for (i,Z_MPO) in enumerate(Z_MPOs)
-        contr=logdot(dag(psi_l_fused),product(Z_MPO,dag(prime(psi_r_fused));cutoff=1e-16))
+        @show siteinds(psi_r_fused)
+        @show siteinds(product(Z_MPO,psi_r_fused;cutoff=1e-16))
+    
+        contr=logdot((conj(psi_l_fused)),dag(product(Z_MPO,psi_r_fused;cutoff=1e-16)))  #the bra gets daggered inside dot
         Z=Z+weights[i]*exp(contr)
         @show contr
     end
+    @show Z
     Z=log(Z)
     @show Z
     phase=exp(-1im*imag(Z)/2.0)
@@ -114,7 +121,7 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
         Z=0
         ###recompute Z with applied phase, should be real now if there's no bug. Can be removed, just a sanity checl
         for (i,Z_MPO) in enumerate(Z_MPOs)
-            contr=logdot(dag(psi_l_fused),product(Z_MPO,dag(prime(psi_r_fused));cutoff=1e-16))
+            contr=logdot(dag(psi_l_fused),product(Z_MPO,psi_r_fused;cutoff=1e-16))
             @show contr
             Z=Z+weights[i]*exp(contr)
         end
@@ -122,6 +129,7 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     end
     res=zeros(ComplexF64,(2,length(taus),length(projs)))
     println("Done with calculating Z...")
+    #return
     sitefactor=real(-Z)/float(length(env_MPOs_up[1]))
     @show sitefactor
 
