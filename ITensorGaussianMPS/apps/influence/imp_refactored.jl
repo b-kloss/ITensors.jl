@@ -6,7 +6,6 @@ include("impurity_tensors.jl")
 function get_any_T(which_T, U,dt,ed,which_trafo::Int,prefactor, args)
     T=which_T(U,dt,ed,Val(2))
     #T=which_T(U,dt,ed)
-    
     return convert_to_itensor(transform_particle_hole(T,which_trafo;prefactor=prefactor),args...)
 end
 
@@ -83,6 +82,7 @@ function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,states::Funct
     mode= is_ph ? 2 : 0
     thefun=states(M)
     prefactor_fun = i -> isodd(i) ? -1 : 1
+    m=ITensor[]
     return MPO([get_any_T(thefun(n),U,dt,ed,mode,prefactor_fun(n),(combined_sites_l[n],combined_sites_r[n])) for n in 1:M])
     #return MPO([convert_to_itensor(transform_particle_hole(thefun(n)(U,dt,ed),1;prefactor=prefactor_fun(n)),combined_sites_l[n],combined_sites_r[n]) for n in 1:M])
     #return MPO([thefun(n)(U,dt,ed,combined_sites_l[n],combined_sites_r[n]) for n in 1:M])
