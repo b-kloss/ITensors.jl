@@ -64,6 +64,8 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     include("imp_noshift_refactored.jl")
     #is_ph=true
     is_ph=get_val(ph)
+    #@show is_ph
+    #return
     U,dt,ed=imp_parameters
     beta,Nt=disc_parameters#potentially more in the future, like Trotter order
     @assert beta/Nt==dt
@@ -87,8 +89,8 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     end
     Z=0.0
     if is_ph
-        #weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
-        weights=[-1.0,1.0,1.0,-1.0] 
+        weights=[1.0,1.0,1.0,1.0]   ###appropriate for PH transformed
+        #weights=[-1.0,1.0,1.0,-1.0] 
     else
         #weights=[1.0,-1.0,-1.0,1.0]    #legacy
         weights=[-1.0,1.0,1.0,-1.0]  ###appropriate for non-PH transformed
@@ -96,18 +98,22 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     end
     @show weights, is_ph
         ##compute partition function sequentially
+        
     
     for (i,Z_MPO) in enumerate(Z_MPOs)
-        @show siteinds(psi_r_fused)
-        @show siteinds(product(Z_MPO,psi_r_fused;cutoff=1e-16))
-    
-        contr=logdot((conj(psi_l_fused)),dag(product(Z_MPO,psi_r_fused;cutoff=1e-16)))  #the bra gets daggered inside dot
+        #@show siteinds(psi_r_fused)
+        #@show siteinds(product(Z_MPO,psi_r_fused;cutoff=1e-16))
+        @show eltype.(Z_MPO)
+        #contr=logdot(dag(psi_l_fused),product(Z_MPO,psi_r_fused;cutoff=1e-16))  #the bra gets daggered inside dot
+        contr=logdot(dag(psi_l_fused),*(Z_MPO,psi_r_fused;cutoff=1e-16))  #the bra gets daggered inside dot
+        
         Z=Z+weights[i]*exp(contr)
         @show contr
     end
-    @show Z
+    #@show Z
     Z=log(Z)
     @show Z
+    #return
     phase=exp(-1im*imag(Z)/2.0)
     ###Handle complex phase
     if abs(real(phase)-1.0) >1e-8
@@ -138,7 +144,7 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
             for site in 1:length(anmpo)
                 anmpo[site]*=exp(sitefactor)
             end
-            res[1,:,i]=exp(sitefactor)*weights[i]*get_corr_from_env(U,dt,ed,anmpo,env_boundary_MPOs_up[i],psi_l_fused,psi_r_fused,combiners_l,combiners_r,is_ph;spin="up")
+            res[1,:,i]=exp(sitefactor)*weights[i]*get_corr_from_env(U,dt,ed,anmpo,env_boundary_MPOs_up[i],psi_l_fused,dag(psi_r_fused),combiners_l,combiners_r,is_ph;spin="up")
         end
     end
     #@time begin

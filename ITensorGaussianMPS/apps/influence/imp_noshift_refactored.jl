@@ -20,7 +20,7 @@ function get_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,com
         push!(preMPO,state_projection)
         #@show state_projection
         #return
-        for n in 2:M-1
+         for n in 2:M-1
             push!(preMPO, get_any_T(thefun(n-1),U,dt,ed,0,prefactor_fun(n),(combiners_l[n],combiners_r[n])))
         end
         push!(preMPO, get_any_T(thefun(M-1),U,dt,ed,0,prefactor_fun(m-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))
@@ -54,26 +54,23 @@ function get_Z_MPO(U,dt,ed::Pair,combined_sites_l,combined_sites_r,combiners_l,c
     thefun=states(M-1;states_kwargs...)
     preMPO=ITensor[]
     push!(preMPO,dag(state_projection))
-    #@show typeof(combiners_l)
-    #@show typeof(combiners_r)
-    #return MPO([get_any_T(thefun(n-1),U,dt,ed,1,prefactor_fun(n),(combiners_l[n],combiners_r[n])) for n in 1:M])
     prefactor_fun = i -> isodd(i) ? -1 : 1
     for n in 2:M-1
         #@show n,M
         push!(preMPO, get_any_T(thefun(n-1),U,dt,ed,mode,prefactor_fun(n),(combiners_l[n],combiners_r[n])))
     end
     #println("done with bulk")
-    #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))
-    #@show inds(state_projection)
-    #@show inds(thefun(M-1)(U,dt,ed,combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M])*dag(state_projection))
-    println("Is it problem with dag stateproj?")
-    @show inds(last(preMPO))
-    push!(preMPO, (dag(get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection))))
+    ###CHECK: somewhat curious that no conj necessary here?
+    ##@show inds(last(preMPO))
+    #@show inds(get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M])))
+    #@show inds(dag(state_projection))
+        
+    push!(preMPO, ((dag(get_any_T(thefun(M-1),U,dt,ed,mode,prefactor_fun(M-1),(combined_sites_l[1],combined_sites_l[M],combined_sites_r[1],combined_sites_r[M]))*dag(state_projection)))))
+    if !(eltype(last(preMPO))<:AbstractFloat)
+        conj!(last(preMPO)) ###since we applied a dagger, we should remove the complex conjugation by complex conjugating again
+        ###CHECK not sure if this works inplace like this
+    end
     #println("done with all")
-    
-    @show inds(last(preMPO))
-    @show inds(state_projection)
-    println("Apparently not.")
     return MPO(preMPO)
 end
 
@@ -83,14 +80,19 @@ end
 function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS,psir::MPS,combiners_l::Vector{ITensor},combiners_r::Vector{ITensor},is_ph::Bool;spin="up")
     ###take care of G(0) separately?
     #0, length(H) + 1, 2, H, Vector{ITensor}(undef, length(H))
-    @show is_ph
+    #@show is_ph
     P=ITensors.ProjMPO(0, length(envMPO) + 1, 1, envMPO, Vector{ITensor}(undef, length(envMPO)))
-    @show "getcorr"
-    #set position to beginning of chain
+    #@show "getcorr"
+    #return
+    #@show inds(last(envMPO))
+    ##@show inds(last(psil))
+    #@show inds(last(psir))
+    
+    
+    #set position to beginning of chain -> problem occurs here
     P=position!(P,psil,psir,1)
     res=ComplexF64[]
     #@show "before loop"
-    #return
     mode = is_ph ? 1 : 0
     for pos in 2:length(envMPO)
         #@show pos
@@ -116,6 +118,7 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
         if isnothing(combl) || isnothing(combr)
             error("no matching pos found")
         end
+        #@show combl, combr,pos
         if spin=="up"
             if pos==length(envMPO)
                 localterm=boundaryMPO[length(envMPO)]
@@ -123,21 +126,21 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
                 prefactor_fun = i -> isodd(i) ? -1 : 1
                 ##the prefactor in front of get_any_T for is_ph takes into account that
                 ##Tcr has an additional sign from the creation operator that the definition didn't take care of yet
+                
                 localterm=(is_ph ? prefactor_fun(pos) : 1) *get_any_T(get_Tcr,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
             end
         else
             if pos==length(envMPO)
-                localterm=boundaryMPO[length(envMPO)]
+                localterm=(is_ph ? prefactor_fun(pos) : 1) * boundaryMPO[length(envMPO)]
             else
                 localterm=get_any_T(get_Tcl,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
                 #localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r,combl,combr)
             end
         end
-        println("after obtaining local term")
-        val=(L*psil[pos])*localterm*((psir[pos])*R)
-        println("after contracting local term")
+        #println("after obtaining local term")
+        val=(L*psil[pos])*localterm*((dag(psir[pos]))*R)
+        #println("after contracting local term")
         @assert order(val)==0
-        @show scalar(val)
         push!(res,Complex(scalar(val)))
     end
     

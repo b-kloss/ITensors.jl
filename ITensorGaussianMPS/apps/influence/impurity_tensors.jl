@@ -15,9 +15,7 @@ function get_T(U::Number,dt::Number,ed::Pair)
 end
 
 #no change in evolution for second order if no intermittent c,cdag
-function get_T(U::Number,dt::Number,ed::Pair,order::Val{2})
-    get_T(U::Number,dt::Number,ed::Pair)
-end
+get_T(U::Number,dt::Number,ed::Pair,order::Val{2})=get_T(U,dt,ed)
 
 get_TB(U::Number,dt::Number,ed::Pair,order::Val{2})=get_TB(U,dt,ed)
 function get_TB(U::Number,dt::Number,ed::Pair)
@@ -62,7 +60,7 @@ function get_Tcl(U::Number,dt::Number,ed::Pair)
         0 0 0 0
         0 0 0 0
         -exp(-dt*ed_dn) 0 0 exp(-dt*(ed_up+ed_dn+U)) 
-        0 0  0
+        0 0 0 0
     ]
     return T
 end
@@ -139,12 +137,12 @@ function transform_particle_hole(T,which::Int;prefactor=1)
     return newT
 end
 
-function convert_to_itensor(T,rinds::t,linds::t) where t<:Index
+function convert_to_itensor(T,linds::t,rinds::t) where t<:Index
     #return itensor(T,linds',dag(rinds))
     return itensor(T,linds,rinds)
 end
 
-function convert_to_itensor(T,rsc::ITensor,lsc::ITensor)
+function convert_to_itensor(T,lsc::ITensor,rsc::ITensor)
     r1,r2=uncombinedinds(rsc)
     l1,l2=uncombinedinds(lsc)
     #return itensor(T,dag(l1'),dag(l2'),r1,r2)*dag(rsc)*lsc'
