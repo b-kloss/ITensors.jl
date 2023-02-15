@@ -25,6 +25,7 @@ function correlation_matrix_to_gmps_brickwall_tailed(
     uB = 0.0
     # find the block whose lowest eigenvalue is within torelence
     for blocksize in 1:maxblocksize
+      
       j = min(i + blocksize, N)
       ΛB = deepcopy(Λ[i:j, i:j]) #@view Λ[i:j, i:j] # \LambdaB is still part of Lambda
       nB, uB = eigen(Hermitian(ΛB))
@@ -32,10 +33,12 @@ function correlation_matrix_to_gmps_brickwall_tailed(
       p = sortperm(nB; by=entropy)
       n = nB[p[1]]
       err = min(n, 1 - n)
+     # @show blocksize,err
       err ≤ eigval_cutoff && break
     end
     # keep the node if the err cannot be reduced
-    if i + maxblocksize >= N && err > eigval_cutoff
+    if i + maxblocksize >= N || err > eigval_cutoff
+      @show i, "not reduced"
       append!(indsnext, inds[i])
       append!(relinds, i)
       continue
