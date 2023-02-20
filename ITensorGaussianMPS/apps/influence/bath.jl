@@ -62,6 +62,26 @@ function get_IM_from_corr(c::Matrix,reshuffle::Bool=true,ph::Bool=false;kwargs..
     return psi, c
 end
 
+function get_IM_from_corr(c::Matrix,sites::Vector{<:Index};kwargs...)
+    eigval_cutoff=get(kwargs, :eigval_cutoff, 1e-12)
+    maxblocksize=get(kwargs, :maxblocksize, 8)
+    minblocksize=get(kwargs, :minblocksize, 1)
+    cutoff=get(kwargs,:cutoff,0.0)
+    maxdim=get(kwargs,:maxdim,2^maxblocksize)
+    N=size(c,1)
+    ###assummes that reshuffling/ph transformation have already been applied
+    BLAS.set_num_threads(1)
+    println("Converting corr to MPS") 
+    @time begin
+    psi=ITensorGaussianMPS.correlation_matrix_to_mps(
+        sites,real.(c);
+        eigval_cutoff=eigval_cutoff,maxblocksize=maxblocksize,minblocksize=minblocksize,cutoff=cutoff,maxdim=maxdim
+    )
+    end
+    return psi, c
+end
+
+
 function get_circuits(c::Matrix,reshuffle::Bool)
     if reshuffle==true
         shuffledinds=vcat(Vector(3:N),[1,2])
@@ -98,7 +118,8 @@ function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lowe
     """exactly the way Julian does it up to units/factors"""
     G=zeros(ComplexF64,(2*Nt,2*Nt))
     #G_opt=zeros(ComplexF64,(2*Nt,2*Nt))
-    factor=1.0/(upper-lower)
+    #factor=1.0/(upper-lower)
+    factor=1.0
     #convention="b"
     #factor=
     @assert (alpha==0.0 || alpha==1.0)
