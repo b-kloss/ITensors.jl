@@ -90,9 +90,13 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
     
     
     #set position to beginning of chain -> problem occurs here
+    #@show inds(last(envMPO))
+    ##@show inds(last(psil))
+    #@show inds(last(psir))
+    
     P=position!(P,psil,psir,1)
     res=ComplexF64[]
-    #@show "before loop"
+    @show "before loop"
     mode = is_ph ? 1 : 0
     for pos in 2:length(envMPO)
         #@show pos

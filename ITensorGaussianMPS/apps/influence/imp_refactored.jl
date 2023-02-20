@@ -95,9 +95,14 @@ function get_Z_MPO(U,dt,ed::Pair,sites_l::Vector{<:Index},sites_r::Vector{<:Inde
     thefun=states(M)
     prefactor_fun = i -> isodd(i) ? -1 : 1
     sites= i -> i==1 ? (sites_l[2*i-1],sites_l[2*i],sites_r[2*i-1],sites_r[2*i],nothing,links[i]) : i==M ? (sites_l[2*i-1],sites_l[2*i],sites_r[2*i-1],sites_r[2*i],links[M-1],nothing) :  (sites_l[2*i-1],sites_l[2*i],sites_r[2*i-1],sites_r[2*i],links[i-1],links[i]) 
+    #sites= i -> i==1 ? (sites_l[2*i],sites_l[2*i-1],sites_r[2*i],sites_r[2*i-1],nothing,links[i]) : i==M ? (sites_l[2*i],sites_l[2*i-1],sites_r[2*i],sites_r[2*i-1],links[M-1],nothing) :  (sites_l[2*i],sites_l[2*i-1],sites_r[2*i],sites_r[2*i-1],links[i-1],links[i]) 
+    
     sitetensors=ITensor[]
     for n in 1:M
         A,B=get_any_T_split(thefun(n),U,dt,ed,mode,prefactor_fun(n),sites(n))
+        #@show dense(A*B)
+        #C=get_any_T(thefun(n),U,dt,ed,mode,prefactor_fun(n),(combined_sites_l[n],combined_sites_r[n]))
+        
         push!(sitetensors,A)
         push!(sitetensors,B)
     end

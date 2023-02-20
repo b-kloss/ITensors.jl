@@ -71,8 +71,10 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     @assert beta/Nt==dt
     taus=Vector((0:Nt-1))*dt
     # merge pairs of sites (1,),(2,3),(4,5)...,(N,) except for the boundary sites
-    combiners_r,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_l)
-    combiners_l,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_r)
+    #@show "combining right"
+    combiners_r,combined_sites_r,psi_r_fused=fuse_indices_pairwise(psi_r)
+    #@show "combining left"
+    combiners_l,combined_sites_l,psi_l_fused=fuse_indices_pairwise(psi_l)
     # MPS on a ring implemented by projecting onto each element of the trace
     projs=get_state_projections(combined_sites_r[1],combined_sites_l[1])    ###FIXME
     Z_MPOs=[]
@@ -103,7 +105,7 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     for (i,Z_MPO) in enumerate(Z_MPOs)
         #@show siteinds(psi_r_fused)
         #@show siteinds(product(Z_MPO,psi_r_fused;cutoff=1e-16))
-        @show eltype.(Z_MPO)
+        #@show eltype.(Z_MPO)
         #contr=logdot(dag(psi_l_fused),product(Z_MPO,psi_r_fused;cutoff=1e-16))  #the bra gets daggered inside dot
         contr=logdot(dag(psi_l_fused),*(Z_MPO,psi_r_fused;cutoff=1e-16))  #the bra gets daggered inside dot
         
