@@ -2,13 +2,57 @@ using ITensorGaussianMPS
 using ITensors
 using LinearAlgebra
 using Test
-
+using PyPlot
+matplotlib.use("QtAgg")
 @testset "Basic" begin
   # Test Givens rotations
   v = randn(6)
   g, r = ITensorGaussianMPS.givens_rotations(v)
   @test g * v ≈ r * [n == 1 ? 1 : 0 for n in 1:length(v)]
 end
+
+@testset "Hamiltonians" begin
+  # Test Givens rotations
+  N=8
+  t=-0.8 ###nearest neighbor hopping
+  mu=0.0 ###on-site chemical potential
+  pairing=1.2
+  os = OpSum()
+  for i in 1:N
+    if 1<i<N
+      js=[i-1,i+1]
+    elseif i==1
+      js=[i+1,]
+    else
+      js=[i-1,]
+    end
+    for j in js
+      os .+= t, "Cdag", i, "C", j
+    end
+  end
+  h_hop=ITensorGaussianMPS.quadratic_hamiltonian(os)
+  for i in 1:N
+    if 1<i<N
+      js=[i-1,i+1]
+    elseif i==1
+      js=[i+1,]
+    else
+      js=[i-1,]
+    end
+    for j in js
+      #os .+= pairing, "Cdag", i, "Cdag", j
+      os .+= -conj(pairing), "C", i, "C", j
+    end
+  end
+  
+  h_hopandpair=ITensorGaussianMPS.quadratic_hamiltonian(os)
+  matshow(real.(h_hop))
+  matshow(real.(h_hopandpair))
+  @test all(abs.(h_hopandpair[N+1:end,N+1:end] - h_hop) .< eps(Float32))
+  show()
+    
+end
+
 
 @testset "Fermion (real and complex)" begin
   N = 10
@@ -44,7 +88,6 @@ end
     # Form the MPS
     s = siteinds("Fermion", N; conserve_qns=true)
     ψ = slater_determinant_to_mps(s, Φ; maxblocksize=4)
-
     os = OpSum()
     for i in 1:N, j in 1:N
       if h[i, j] ≠ 0
@@ -66,6 +109,7 @@ end
     @test abs(inner(ψ, ψ̃)) ≈ 1 rtol = 1e-5
     @test inner(ψ̃', H, ψ̃) ≈ inner(ψ', H, ψ) rtol = 1e-5
     @test E ≈ energy
+    #end
   end
 end
 
