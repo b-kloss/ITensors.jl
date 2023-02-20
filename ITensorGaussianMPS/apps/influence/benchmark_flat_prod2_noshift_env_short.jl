@@ -23,7 +23,7 @@ ITensors.NDTensors.Strided.disable_threads()
 
 #@show ITensors.mkl_get_num_threads()
 
-include("imp_noshift_refactored.jl")
+#include("imp_noshift_refactored.jl")
 #include("imp_noshift.jl")
 
 include("bath.jl")
@@ -42,6 +42,7 @@ ed=Pair(params.ed_u,params.ed_d)  #0.52,0.32
 beta=params.beta
 #dt=params.dt
 Nt=params.Nt
+@assert iszero(Nt%4)
 dt=beta/(Nt)
 is_ph=true
 taus=Vector((0:Nt-1))*dt
@@ -77,18 +78,23 @@ println(typeof(g_lesser))
 
 println("getting G")
 @time begin
-#G_new=get_G(g_lesser_beta,g_greater_beta,dt,Nt,-D,D;alpha=0.0)#,convention="b")
+G_new=get_G(g_lesser_beta,g_greater_beta,dt,Nt,-D,D;alpha=1.0)#,convention="b")
+#matshow(real.(G_new))
+#show()
+#return
 G2=get_G(g_lesser_beta,g_greater_beta,dt/8.,8*Nt,-D,D;alpha=1.0)#,convention="b")
 #res=evaluate_ni_aim(G2,ed;convention='a')
-res2=evaluate_ni_aim(integrate_out_timesteps(G2,8),ed;convention='a')
+#res2=evaluate_ni_aim(integrate_out_timesteps(G2,8),ed;convention='a')
+res2=evaluate_ni_aim(G_new,ed;convention='a')
+
 #plot(real.(res[1,1:4:end]))
-plot(real.(res2[1,:]),".")
-show()
+#plot(real.(res2[1,:]),".")
+#show()
 end
 #return
 
 println("getting IM")
-psi_r,c=get_IM(integrate_out_timesteps(G2,8),false,is_ph;eigval_cutoff=eigval_cutoff,minblocksize=minblocksize,maxblocksize=maxblocksize,maxdim=maxdim,cutoff=cutoff)
+psi_r,c=get_IM(G_new,false,is_ph;eigval_cutoff=eigval_cutoff,minblocksize=minblocksize,maxblocksize=maxblocksize,maxdim=maxdim,cutoff=cutoff)
 
 @show linkdims(psi_r)
 #plot(linkdims(psi_r))
@@ -111,11 +117,13 @@ fout["svals"] = SvN_spectrum
 @show maxlinkdim(psi_r)
 flush(stdout)
 close(fout)
-Z,res=contract(psi_r,(U,dt,ed),(beta,Nt);shift=false,ph=true)
+Z,res=contract(psi_r,(U,dt,ed),(beta,Nt);shift=false,ph=true,env=true)
 @show real.(res)
-plot(abs.(real.(res2[1,:])-real.(reverse(res[1,:])))./abs.(res2[1,:]),"k")
-plot(abs.(real.(res2[1,:])-real.(reverse(res[1,:]))),"r")
-yscale("log")
+#@show real.(reverse(res2[2,:]))
+
+#plot(abs.(real.(res2[1,:])-real.(reverse(res[1,:])))./abs.(res2[1,:]),"k")
+#plot(abs.(real.(res2[1,:])-real.(reverse(res[1,:]))),"r")
+#yscale("log")
 #plot(,"r")
 show()
 return

@@ -58,21 +58,30 @@ end
 function g_greater_beta(omega,tau,tau_p)
     return g_greater(omega,beta,tau,tau_p) * spec_dens(omega)
 end
-println(typeof(g_lesser))
-@show typeof(g_greater)
-G_new=get_G(g_lesser_beta,g_greater_beta,dt,Nt,-D,D;alpha=1.0)#,convention="b")
 
+function g_lesser_beta(omega,tdiff)
+    return g_lesser(omega,beta,tdiff) * spec_dens(omega)
+end
+function g_greater_beta(omega,tdiff)
+    return g_greater(omega,beta,tdiff) * spec_dens(omega)
+end
+
+G_new=get_G(g_lesser_beta,g_greater_beta,dt,Nt,-D,D;alpha=1.0)#,convention="b")
+#get_G(g_lesser_beta,g_greater_beta,dt,Nt,-D,D;alpha=1.0)#,convention="b")
+res2=evaluate_ni_aim(G_new,ed;convention='a')
+@show(real.(res2[1,:]))
 matshow(real.(G_new))
 show()
 
-fout=h5open("/mnt/home/bkloss/projects/IM_solver/triqs_benchmark/G_julia_beta2.h5","w")
-fout["G"] = G_new
-close(fout)
-return
+#fout=h5open("/mnt/home/bkloss/projects/IM_solver/triqs_benchmark/G_julia_beta2.h5","w")
+##fout["G"] = G_new
+#close(fout)
+#return
 println("getting IM")
 using MKL
 @show BLAS.set_num_threads(32)
 psi_r,c=get_IM(G_new,true,is_ph;eigval_cutoff=eigval_cutoff,minblocksize=minblocksize,maxblocksize=maxblocksize,maxdim=maxdim,cutoff=cutoff)
+@show eltype(psi_r[1])
 #Deltafn="/mnt/home/bkloss/projects/IM_solver/triqs_benchmark/Delta_beta10.h5"
 #reftaus=h5read(Deltafn,"taus")
 #@show last(reftaus)
