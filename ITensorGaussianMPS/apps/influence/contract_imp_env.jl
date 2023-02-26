@@ -86,6 +86,9 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
         push!(Z_MPOs,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_Z_MPO_fun,proj,is_ph))
         push!(env_MPOs_up,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_MPO_fun,proj,is_ph;spin="up")) 
         push!(env_boundary_MPOs_up,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_boundary_MPO_fun,proj,is_ph;spin="up")) 
+        push!(env_MPOs_dn,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_MPO_fun,proj,is_ph;spin="down")) 
+        push!(env_boundary_MPOs_dn,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_boundary_MPO_fun,proj,is_ph;spin="down")) 
+        
         #push!(env_MPOs_dn,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_MPO_fun,proj,is_ph;spin="down"))
         #push!(env_boundary_MPOs_dn,get_Z_MPO(U,dt,ed,combined_sites_l,combined_sites_r,combiners_l,combiners_r,get_env_boundary_MPO_fun,proj,is_ph;spin="down"))
     end
@@ -149,6 +152,15 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
             res[1,:,i]=exp(sitefactor)*weights[i]*get_corr_from_env(U,dt,ed,anmpo,env_boundary_MPOs_up[i],psi_l_fused,dag(psi_r_fused),combiners_l,combiners_r,is_ph;spin="up")
         end
     end
+    @time begin
+        for (i,anmpo) in enumerate(env_MPOs_dn)
+            for site in 1:length(anmpo)
+                anmpo[site]*=exp(sitefactor)
+            end
+            res[2,:,i]=exp(sitefactor)*weights[i]*get_corr_from_env(U,dt,ed,anmpo,env_boundary_MPOs_dn[i],psi_l_fused,dag(psi_r_fused),combiners_l,combiners_r,is_ph;spin="down")
+        end
+    end
+    
     #@time begin
     #    for (i,anmpo) in enumerate(env_MPOs_dn)
     #        for site in 1:length(anmpo)
@@ -159,7 +171,8 @@ function contract(psi_l::MPS,psi_r::MPS, imp_parameters, disc_parameters,shift::
     #end
     res[isnan.(res)] .= 0.0
     #@show res
-    ress=sum(res,dims=3)
+    ress=dropdims(sum(res,dims=3),dims=3)
+    @show size(ress)
     return Z,ress
 end
 
