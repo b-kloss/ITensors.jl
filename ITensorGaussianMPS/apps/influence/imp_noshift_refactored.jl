@@ -133,13 +133,24 @@ function get_corr_from_env(U,dt,ed::Pair,envMPO::MPO,boundaryMPO::MPO, psil::MPS
                 
                 localterm=(is_ph ? prefactor_fun(pos) : 1) *get_any_T(get_Tcr,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
             end
-        else
-            if pos==length(envMPO)
-                localterm=(is_ph ? prefactor_fun(pos) : 1) * boundaryMPO[length(envMPO)]
-            else
-                localterm=get_any_T(get_Tcl,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
-                #localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r,combl,combr)
-            end
+        elseif spin=="down"
+                if pos==length(envMPO)
+                    localterm=boundaryMPO[length(envMPO)]       ###here that boundary_MPO would also be one for spin down since it carries TBcl
+                else
+                    prefactor_fun = i -> isodd(i) ? -1 : 1
+                    ##the prefactor in front of get_any_T for is_ph takes into account that
+                    ##Tcr has an additional sign from the creation operator that the definition didn't take care of yet
+                    
+                    localterm=(is_ph ? prefactor_fun(pos) : 1) *get_any_T(get_Tcl,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
+                end
+                #DEPRECATED  
+        #else
+        #    if pos==length(envMPO)
+        #        localterm=(is_ph ? prefactor_fun(pos) : 1) * boundaryMPO[length(envMPO)]
+        #    else
+        #        localterm=get_any_T(get_Tcl,U,dt,ed,mode,prefactor_fun(pos),(combl,combr))
+        #        #localterm=get_Tcl(U,dt,ed,combined_site_l,combined_site_r,combl,combr)
+        #    end
         end
         #println("after obtaining local term")
         val=(L*psil[pos])*localterm*((dag(psir[pos]))*R)
@@ -207,7 +218,7 @@ function get_env_boundary_MPO_fun(Nt::Int;spin="up")
     if spin=="up"
         T0=get_TBnr
     elseif spin=="down"
-        @assert false   #not implemented
+        T0=get_TBnl
     end
     return (n -> (n==Nt ? T0 : T))::Function
 end
