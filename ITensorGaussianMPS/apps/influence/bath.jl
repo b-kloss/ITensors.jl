@@ -1,6 +1,6 @@
 #using F_utilities
 using LinearAlgebra
-using PyPlot
+#using PyPlot
 using QuadGK
 using SkewLinearAlgebra
 
@@ -113,6 +113,43 @@ function evaluate_flatDOS_greater(lower,upper,beta,tau,tau_p)
     return up-lo
 end
     
+function get_G(Delta::Vector,dt::Number,Nt::Number;alpha=1,convention="a")
+    """calculate G from Δ(τ) on a discrete imaginary-time grid [0,beta]."""
+    G=zeros(ComplexF64,(2*Nt,2*Nt))
+    @show dt^2 * Delta
+    @assert (alpha==0.0 || alpha==1.0)
+    incr=Int(alpha)
+    @assert length(Delta)==Nt+1
+    for m in 0:Nt-1
+        for n in m+1:Nt-1
+            G[2*m+1,2*n+1+1]+= dt^2 * Delta[n-(m+incr)+1]
+            G[2*m+1+1,2*n+1]-= dt^2 * -Delta[Nt+m-(n+incr)+1]
+        end
+        G[2*m+1,2*m+1+1] += dt^2 * -Delta[Nt-incr+1]
+        G[2*m+1,2*m+1+1] += - 1.
+    end
+    G -=transpose(G)
+    return G
+end
+
+
+
+function get_G_cont(Delta::Vector,dt::Number,Nt::Number;alpha=1,convention="a")
+    ##Delta here is assumed to be Delta(0),...Delta((M-1)*dt) length=M
+    G=zeros(ComplexF64,(2*Nt,2*Nt))
+    incr=Int(alpha)
+    ## move first element to end and flip its sign
+    shuffledinds=vcat(Vector(2:length(Delta)),[1,])
+    hyb = Delta[shuffledinds]
+    hyb[end] *= -1
+    for m in 0:Nt-1
+        G[2*m+1,2*(m+1):2:end] = - dt^2 .* hyb[1:length(hyb)-m]  
+        G[2*(m+1),2*(m+1)+1:2:end] = - dt^2 .* hyb[length(hyb):-1:m+2]
+        G[2*m+1, 2*(m+1)] += -1
+    end
+    G -= transpose(G)
+    return G 
+end
 
 function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lower::Number,upper::Number;alpha=1,convention="a")
     """exactly the way Julian does it up to units/factors"""
@@ -132,15 +169,22 @@ function get_G(g_lesser::Function,g_greater::Function,dt::Number,Nt::Number,lowe
         valsl[-i]=quadgk(omega -> factor*g_lesser(omega,-i*dt),lower,upper)[1]
         
     end
-
+    #G_new=get_G([valsg[i] for i in 0:Nt],dt,Nt)
+    
     for m in 0:Nt-1   ##0 2*Nt-1 for python convention match
         #tau=m*dt
         for n in m+1:Nt-1
             #tau_p=n*dt
             G[2*m+1,2*n+1+1]+= dt^2 * valsg[n-(m+incr)] #quadgk(omega -> factor*g_greater(omega,tau_p,tau+(dt*alpha)),lower,upper)[1]
-            G[2*m+1+1,2*n+1]-= dt^2 * valsl[m-(n+incr)] #quadgk(omega -> factor*g_lesser(omega,tau,tau_p+(dt*alpha)),lower,upper)[1]
+            G[2*m+1+1,2*n+1]-= dt^2 * valsl[m-(n+incr)] 
+            
+            #G[2*m+1+1,2*n+1]-= dt^2 * -valsg[Nt+m-(n+incr)] 
+            #quadgk(omega -> factor*g_lesser(omega,tau,tau_p+(dt*alpha)),lower,upper)[1]
         end
         G[2*m+1,2*m+1+1] += dt^2 * valsl[-incr]#quadgk(omega -> factor*g_lesser(omega,tau,tau+(dt*alpha)),lower,upper)[1]
+        @assert isapprox(-valsg[Nt-incr],valsl[-incr])
+        #G[2*m+1,2*m+1+1] += dt^2 * -valsg[Nt-incr]#quadgk(omega -> factor*g_lesser(omega,tau,tau+(dt*alpha)),lower,upper)[1]
+        
         G[2*m+1,2*m+1+1] += - 1.
     end
     G -=transpose(G)

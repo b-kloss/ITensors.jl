@@ -54,12 +54,16 @@ let
     fout=h5open("results.h5","w")
     close(fout)
     #spec_dens(omega)= abs(omega-ed[1]) < gap ? 0.0 : V^2
-    nu=params.nu
-    e_c=params.e_c
+    spec_dens=params.DOS
+    lower,upper=params.domain()
+    #plot(LinRange(lower,upper,Nt),spec_dens.(LinRange(lower,upper,Nt)))
+    #show()
+    #nu=params.nu
+    #e_c=params.e_c
     #tanh()
     #spec_dens(omega) = (1.0 ./ (((1.0 .+ exp.(nu*(abs(omega-e_c))))) * (1.0 .+ exp(-nu*(abs(omega+e_c))))))
     #plot(LinRange(-5,5,1001),tanh.(e_c*(LinRange(-5,5,1001) .+ nu)) .* -tanh.(e_c*(LinRange(-5,5,1001) .- nu)) .+1)
-    spec_dens = x -> 0.5 * (tanh(e_c*(x+ nu)) * (-tanh(e_c*(x - nu))) +1)
+    #spec_dens = x -> 0.5 * (tanh(e_c*(x+ nu)) * (-tanh(e_c*(x - nu))) +1)
     ##return  2 * gamma /((1+np.exp(nu*(energy - e_c))) * (1+np.exp(-nu*(energy + e_c)))) #this gives a flat band with smooth edges
     #return  2 * gamma /((1+np.exp(nu*(energy - e_c))) * (1+np.exp(-nu*(energy + e_c)))) #this gives a flat band with smooth edges
     function g_lesser_beta(omega,tau,tau_p)
@@ -75,13 +79,55 @@ let
     function g_greater_beta(omega,tdiff)
         return g_greater(omega,beta,tdiff) * spec_dens(omega)
     end
-    #Tren=8
-    Tren=1
+    #lower=-(D+gap)
+    #upper=D+gap
+    
+    
+    #Tren=4
+    
+    @show Tren
+    Delta_tau=zeros(ComplexF64,(Nt*Tren)+1)
+    
+    for i in 0:(Nt*Tren)
+        Delta_tau[i+1]=quadgk(omega -> 1*g_greater_beta(omega,i*dt/Tren),lower,upper)[1]
+    end
+    taus=Vector((0:Tren*Nt-1))*dt/Tren
+    
     println("Getting G")
     @time begin
-    G=get_G(g_lesser_beta,g_greater_beta,dt/Tren,Nt*Tren,-D,D;alpha=alpha)#,convention="b")
-    @show size(G)
+    #G=get_G(g_lesser_beta,g_greater_beta,dt/Tren,Nt*Tren,lower,upper;alpha=alpha)#,convention="b")
+    G=get_G(Delta_tau,dt/Tren,Nt*Tren;alpha=alpha)#,convention="b")    
     end
+    
+    Delta_tau_test=zeros(ComplexF64,(Nt*Tren))
+    alpha=1.0
+    for i in 0:1#(Nt*Tren)
+        Delta_tau_test[i+1]= quadgk(omega -> 1*g_greater_beta(omega,(Nt*Tren + i-1-Int(alpha))*dt/Tren),lower,upper)[1]
+    end
+    for i in 2:(Nt*Tren)-1
+        Delta_tau_test[i+1]= - quadgk(omega -> 1*g_greater_beta(omega,(i-1-Int(alpha))*dt/Tren),lower,upper)[1]
+    end
+    
+    
+    println("Getting G")
+    #@time begin
+    G2=get_G_cont(Delta_tau_test,dt/Tren,Nt*Tren;alpha=alpha)
+    matshow(real.(G))
+    matshow(real.(G2))
+    matshow(real.(G-G2))
+    show()
+    
+
+    #@show G
+    #end
+    #G=get_G(Delta_tau,dt/Tren,Nt*Tren;alpha=alpha)#,convention="b")
+    
+    #matshow(real.(G))
+    #matshow(real.(G-Gc))
+    
+    #show()
+    #@show size(G)
+    #end
 
     println("Integrating out auxiliary timesteps")
     @time begin
@@ -98,7 +144,8 @@ let
     if iszero(U)
         println("Evaluating exact noninteracting solution")
         res2=evaluate_ni_aim(G,ed;convention='a')
-
+        plot(real.(res2[1,1:end]))
+        show()
         fout=h5open("results.h5","r+")
         fout["G_ex"] = real.(res2)
         close(fout)
@@ -123,14 +170,14 @@ let
     #psi_l,_ = get_IM_from_corr(c,sites_l;eigval_cutoff=eigval_cutoff,minblocksize=minblocksize,maxblocksize=maxblocksize,maxdim=maxdim,cutoff=cutoff)
     
     psi_l = deepcopy(psi_r)
-    function swap_all_inds(T::ITensor)
-        indpairs=[[ind,sim(ind)] for ind in inds(T)]
-        oinds=collect(indpairs[i][1] for i in 1:length(indpairs))
-        sinds=collect(indpairs[i][2] for i in 1:length(indpairs))
-        
-        T=swapinds(T,oinds,sinds)
-        return T
-    end
+    #function swap_all_inds(T::ITensor)
+    #    indpairs=[[ind,sim(ind)] for ind in inds(T)]
+    #    oinds=collect(indpairs[i][1] for i in 1:length(indpairs))
+    #    sinds=collect(indpairs[i][2] for i in 1:length(indpairs))
+    #    
+    #    T=swapinds(T,oinds,sinds)
+    #    return T
+    #end
 
     ####Ideally we want to swap inds instead of redoing the MPS construction for the identical environment
     #for i in 1:length(sites)
@@ -174,6 +221,19 @@ let
     #@show (real.(res))
     #@show (real.(res2))
     #@show (real.(res[1:(end-1)]-res2[1,2:end]))
+    #plot(abs.((real.(res[1,1:(end-1),1]-res2[2,2:end]))),"r")
+    
+    #plot(abs.((real.(res[1,1:(end-1),1]-res2[1,2:end]) ./ real.(res[1,1:(end-1),1]))))
+    @show res
+    @show size(res)
+    plot(real.(res2[2,2:end]),"r-")
+    plot(real.(res2[1,2:end]),"b-")
+    
+    plot(real.(res[1,1:(end-1)])./real.(res2[1,2:end]),"k--")
+    #show()
+    yscale("log")
+    show()
+    
     fout=h5open("results.h5","r+")
     fout["G"] = res
     fout["t"] = taus[2:end,1:1]
