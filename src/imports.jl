@@ -99,6 +99,7 @@ import LinearAlgebra:
   factorize,
   ishermitian,
   lmul!,
+  lq,
   mul!,
   norm,
   normalize,
@@ -111,6 +112,8 @@ import LinearAlgebra:
   transpose
 
 using ITensors.NDTensors:
+  Algorithm,
+  @Algorithm_str,
   EmptyNumber,
   _Tuple,
   _NTuple,
@@ -161,6 +164,7 @@ import ITensors.NDTensors:
   outer,
   permuteblocks,
   polar,
+  ql,
   scalartype,
   scale!,
   setblock!,
@@ -179,7 +183,7 @@ import ITensors.NDTensors:
   addblock!,
   store
 
-import ITensors.Ops: Prod, Sum
+import ITensors.Ops: Prod, Sum, terms
 
 import Random: randn!
 

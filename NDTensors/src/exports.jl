@@ -44,12 +44,12 @@ export
   ⊗,
   # Methods
   randomTensor,
-  randomDenseTensor,
   array,
   contract,
   matrix,
   outer,
   permutedims!!,
+  ql,
   read,
   vector,
   write,
@@ -76,4 +76,7 @@ export
   tensor,
   inds,
   ind,
-  store
+  store,
+
+  # linearalgebra.jl
+  qr

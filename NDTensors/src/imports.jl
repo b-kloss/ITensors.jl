@@ -20,6 +20,7 @@ import Base:
   copyto!,
   eachindex,
   eltype,
+  empty,
   fill,
   fill!,
   getindex,
@@ -30,9 +31,9 @@ import Base:
   iterate,
   length,
   map,
-  ndims,
   permutedims,
   permutedims!,
+  print,
   promote_rule,
   randn,
   real,
@@ -54,6 +55,6 @@ import Base.Broadcast: Broadcasted, BroadcastStyle
 
 import Adapt: adapt_structure, adapt_storage
 
-import LinearAlgebra: diag, exp, norm
+import LinearAlgebra: diag, exp, norm, qr
 
 import TupleTools: isperm
